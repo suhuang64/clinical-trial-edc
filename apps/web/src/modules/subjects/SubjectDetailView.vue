@@ -103,6 +103,21 @@ interface SubjectFileRow {
   createdAt: string
 }
 
+interface RandomizationContext {
+  name: string
+  method: string
+  status: 'draft' | 'active' | 'frozen' | 'disabled'
+  arms: Array<{ id: string; label: string }>
+  factorKeys: string[]
+}
+
+interface RandomizationResult {
+  randomNumber: string
+  armId?: string
+  assignment?: { arm_id: string; assigned_at: string }
+  alreadyAssigned?: boolean
+}
+
 const route = useRoute()
 const router = useRouter()
 const { t, locale } = useI18n()
@@ -116,12 +131,14 @@ const records = ref<RecordRow[]>([])
 const events = ref<SubjectEventRow[]>([])
 const timeline = ref<TimelineRow[]>([])
 const subjectFiles = ref<SubjectFileRow[]>([])
+const randomization = ref<RandomizationContext | null>(null)
 const capabilities = ref({
   create: false,
   edit: false,
   delete: false,
   editScreening: false,
   enroll: false,
+  randomize: false,
   manageEvents: false,
   deleteSubject: false,
 })
@@ -155,6 +172,9 @@ const conclusionForm = ref<{ conclusion: 'eligible' | 'failed'; reason: string }
   conclusion: 'eligible',
   reason: '',
 })
+const randomizationDialogOpen = ref(false)
+const randomizationSaving = ref(false)
+const randomizationFactors = ref<Record<string, string>>({})
 
 const subjectId = computed(() => String(route.params.id))
 const statusLabels = computed<Record<string, string>>(() => ({
@@ -201,6 +221,19 @@ const screeningForm = computed(
   () => forms.value.find((form) => form.formType === 'screening') ?? null,
 )
 const clinicalForms = computed(() => forms.value.filter((form) => form.formType !== 'screening'))
+const canExecuteRandomization = computed(
+  () =>
+    capabilities.value.randomize &&
+    subject.value?.status === 'enrolled' &&
+    !subject.value.random_number &&
+    ['active', 'frozen'].includes(randomization.value?.status ?? ''),
+)
+const randomizationFactorLabels = computed<Record<string, string>>(() => ({
+  site: t('randomization.factorLabels.site'),
+  sex: t('randomization.factorLabels.sex'),
+  age_group: t('randomization.factorLabels.ageGroup'),
+  disease_stage: t('randomization.factorLabels.diseaseStage'),
+}))
 const timelineActionLabels = computed<Record<string, string>>(() => ({
   'subject.screening_created': t('subjects.detail.timelineActions.screeningCreated'),
   'subject.screening_concluded': t('subjects.detail.timelineActions.screeningConcluded'),
@@ -370,6 +403,74 @@ async function enrollSubject() {
   }
 }
 
+function screeningFactorValue(key: string) {
+  if (key === 'site') return subject.value?.site_code ?? ''
+  const value = parseScreeningValues()[key]
+  if (typeof value === 'string' || typeof value === 'number') return String(value)
+  if (typeof value === 'boolean') return value ? t('subjects.detail.yes') : t('subjects.detail.no')
+  return ''
+}
+
+function openRandomizationDialog() {
+  if (!randomization.value || !subject.value) return
+  randomizationFactors.value = Object.fromEntries(
+    randomization.value.factorKeys.map((key) => [key, screeningFactorValue(key)]),
+  )
+  randomizationDialogOpen.value = true
+}
+
+async function executeRandomization() {
+  if (!studyStore.currentStudyId || !subject.value || !randomization.value) return
+  const missingFactor = randomization.value.factorKeys.find(
+    (key) => !randomizationFactors.value[key]?.trim(),
+  )
+  if (missingFactor) {
+    ElMessage.warning(
+      t('subjects.detail.messages.randomizationFactorRequired', {
+        factor: randomizationFactorLabels.value[missingFactor] ?? missingFactor,
+      }),
+    )
+    requestAnimationFrame(() =>
+      document
+        .querySelector<HTMLElement>(`[data-randomization-factor="${missingFactor}"] input`)
+        ?.focus(),
+    )
+    return
+  }
+  randomizationSaving.value = true
+  try {
+    const response = await apiRequest<RandomizationResult>(
+      `/studies/${studyStore.currentStudyId}/randomization/subjects/${subjectId.value}/assign`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          factors: Object.fromEntries(
+            Object.entries(randomizationFactors.value).map(([key, value]) => [key, value.trim()]),
+          ),
+        }),
+      },
+    )
+    const armId = response.armId ?? response.assignment?.arm_id
+    const armLabel = randomization.value.arms.find((arm) => arm.id === armId)?.label ?? armId
+    randomizationDialogOpen.value = false
+    ElMessage.success(
+      t('subjects.detail.messages.randomized', {
+        number: response.randomNumber,
+        arm: armLabel || t('subjects.detail.messages.armNotReturned'),
+      }),
+    )
+    await load()
+  } catch (error) {
+    ElMessage.error(
+      error instanceof ApiClientError
+        ? error.message
+        : t('subjects.detail.messages.randomizationFailed'),
+    )
+  } finally {
+    randomizationSaving.value = false
+  }
+}
+
 async function load() {
   await studyStore.load()
   if (!studyStore.currentStudyId) return
@@ -381,6 +482,7 @@ async function load() {
           subject: SubjectRow
           forms: FormContext[]
           visits: VisitRow[]
+          randomization: RandomizationContext | null
           capabilities: typeof capabilities.value
         }>(`/studies/${studyStore.currentStudyId}/subjects/${subjectId.value}/records/context`),
         apiRequest<{ items: RecordRow[] }>(
@@ -399,6 +501,7 @@ async function load() {
     subject.value = context.subject
     forms.value = context.forms
     visits.value = context.visits
+    randomization.value = context.randomization
     capabilities.value = context.capabilities
     records.value = recordResponse.items
     events.value = eventResponse.items
@@ -721,6 +824,14 @@ watch(subjectId, load, { immediate: true })
         :tone="statusTones[subject.status] ?? 'neutral'"
         :label="statusLabels[subject.status] ?? subject.status"
       />
+      <el-button
+        v-if="canExecuteRandomization"
+        class="subject-primary-action"
+        type="primary"
+        @click="openRandomizationDialog"
+      >
+        {{ t('subjects.detail.executeRandomization') }}
+      </el-button>
       <el-button
         v-if="capabilities.deleteSubject && !subject.random_number"
         class="subject-delete"
@@ -1119,6 +1230,60 @@ watch(subjectId, load, { immediate: true })
   </el-drawer>
 
   <el-dialog
+    v-model="randomizationDialogOpen"
+    :title="t('subjects.detail.randomizationTitle')"
+    width="min(560px, calc(100vw - 32px))"
+    :close-on-click-modal="false"
+  >
+    <el-alert
+      :title="t('subjects.detail.randomizationIrreversible')"
+      type="warning"
+      show-icon
+      :closable="false"
+    />
+    <dl class="randomization-summary">
+      <div>
+        <dt>{{ t('subjects.subjectNumber') }}</dt>
+        <dd>{{ subject?.subject_number }}</dd>
+      </div>
+      <div>
+        <dt>{{ t('subjects.site') }}</dt>
+        <dd>{{ subject?.site_code }} · {{ subject?.site_name }}</dd>
+      </div>
+      <div>
+        <dt>{{ t('subjects.detail.randomizationScheme') }}</dt>
+        <dd>{{ randomization?.name }}</dd>
+      </div>
+    </dl>
+    <el-form v-if="randomization?.factorKeys.length" label-position="top" @submit.prevent>
+      <el-form-item
+        v-for="key in randomization.factorKeys"
+        :key="key"
+        :label="randomizationFactorLabels[key] ?? key"
+        required
+      >
+        <el-input
+          v-model="randomizationFactors[key]"
+          :data-randomization-factor="key"
+          :readonly="key === 'site'"
+          maxlength="200"
+        />
+        <p v-if="key !== 'site'" class="form-help">
+          {{ t('subjects.detail.randomizationFactorHelp') }}
+        </p>
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button :disabled="randomizationSaving" @click="randomizationDialogOpen = false">
+        {{ t('subjects.detail.cancel') }}
+      </el-button>
+      <el-button type="primary" :loading="randomizationSaving" @click="executeRandomization">
+        {{ t('subjects.detail.confirmRandomization') }}
+      </el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog
     v-model="conclusionDialogOpen"
     :title="t('subjects.detail.submitConclusion')"
     width="min(520px, calc(100vw - 32px))"
@@ -1254,6 +1419,29 @@ watch(subjectId, load, { immediate: true })
 }
 .subject-delete {
   margin-left: auto;
+}
+.subject-primary-action {
+  margin-left: auto;
+}
+.subject-primary-action + .subject-delete {
+  margin-left: 0;
+}
+.randomization-summary {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+.randomization-summary div {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.35fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.randomization-summary dt {
+  color: var(--color-text-secondary);
+}
+.randomization-summary dd {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 .subject-files-panel,
 .timeline-panel,

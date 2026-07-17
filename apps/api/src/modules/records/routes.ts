@@ -348,8 +348,26 @@ export const recordRoutes: FastifyPluginAsync = async (app) => {
           'subject.edit',
           'subject.delete',
           'subject.enroll',
+          'randomization.execute',
         ])
       : await resolveMembershipPermissions(auth.membershipId!, auth.roleCode!)
+    const canRandomize = permissions.has('randomization.execute')
+    const randomizationScheme = canRandomize
+      ? (sqlite
+          .prepare(
+            `SELECT name, method, arms_json, config_json, status
+             FROM randomization_schemes WHERE study_id = ?`,
+          )
+          .get(subject.study_id) as
+          | {
+              name: string
+              method: string
+              arms_json: string
+              config_json: string
+              status: string
+            }
+          | undefined)
+      : undefined
     const forms = sqlite
       .prepare(
         `SELECT f.*, fv.version_number, fv.schema_json
@@ -381,12 +399,29 @@ export const recordRoutes: FastifyPluginAsync = async (app) => {
       subject,
       forms: items,
       visits,
+      randomization: randomizationScheme
+        ? {
+            name: randomizationScheme.name,
+            method: randomizationScheme.method,
+            status: randomizationScheme.status,
+            arms: (
+              JSON.parse(randomizationScheme.arms_json) as Array<{
+                id: string
+                label: string
+              }>
+            ).map(({ id, label }) => ({ id, label })),
+            factorKeys:
+              (JSON.parse(randomizationScheme.config_json) as { factorKeys?: string[] })
+                .factorKeys ?? [],
+          }
+        : null,
       capabilities: {
         create: permissions.has('data.create'),
         edit: permissions.has('data.edit'),
         delete: permissions.has('data.delete'),
         editScreening: permissions.has('subject.edit'),
         enroll: permissions.has('subject.enroll'),
+        randomize: canRandomize,
         manageEvents: permissions.has('subject.edit'),
         deleteSubject: permissions.has('subject.delete'),
       },

@@ -379,6 +379,17 @@ describe('API 基础能力', () => {
       ).statusCode,
     ).toBe(200)
 
+    const randomizationContext = await app!.inject({
+      method: 'GET',
+      url: `/api/v1/studies/${studyId}/subjects/${subjectId}/records/context`,
+      headers,
+    })
+    expect(randomizationContext.statusCode).toBe(200)
+    expect(randomizationContext.json()).toMatchObject({
+      capabilities: { randomize: true },
+      randomization: { status: 'active', factorKeys: [] },
+    })
+
     const assignmentResponse = await app!.inject({
       method: 'POST',
       url: `/api/v1/studies/${studyId}/randomization/subjects/${subjectId}/assign`,

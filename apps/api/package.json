@@ -8,7 +8,7 @@
     "start": "node --conditions=production dist/server.js",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests --exclude dist/**",
+    "test": "vitest run --passWithNoTests --exclude 'dist/**'",
     "admin:init": "tsx src/cli/init-admin.ts"
   },
   "dependencies": {
