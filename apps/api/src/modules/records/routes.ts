@@ -27,6 +27,8 @@ interface SubjectRow {
   screening_number: string
   subject_number: string | null
   random_number: string | null
+  randomization_arm_id: string | null
+  randomization_arm_label: string | null
   status: string
 }
 
@@ -92,9 +94,17 @@ const updateRecordSchema = z.object({
 function subjectByStudy(studyId: string, subjectId: string) {
   return sqlite
     .prepare(
-      `SELECT s.*, st.name AS site_name
+      `SELECT s.*, st.name AS site_name,
+              ra.arm_id AS randomization_arm_id,
+              (SELECT json_extract(arm.value, '$.label')
+               FROM json_each(rs.arms_json) arm
+               WHERE json_extract(arm.value, '$.id') = ra.arm_id) AS randomization_arm_label
        FROM subjects s
        JOIN sites st ON st.study_id = s.study_id AND st.name = s.site_name
+       LEFT JOIN randomization_assignments ra
+         ON ra.study_id = s.study_id AND ra.subject_id = s.id
+       LEFT JOIN randomization_schemes rs
+         ON rs.study_id = s.study_id AND rs.id = ra.scheme_id
        WHERE s.study_id = ? AND s.id = ?`,
     )
     .get(studyId, subjectId) as SubjectRow | undefined

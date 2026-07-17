@@ -16,6 +16,8 @@ interface SubjectRow {
   screening_number: string
   subject_number: string | null
   random_number: string | null
+  randomization_arm_id: string | null
+  randomization_arm_label: string | null
   status: string
   site_name: string
   row_version: number
@@ -813,6 +815,14 @@ watch(subjectId, load, { immediate: true })
       <div>
         <span class="muted-text">{{ t('subjects.randomNumber') }}</span
         ><strong>{{ subject.random_number || t('subjects.detail.notRandomized') }}</strong>
+      </div>
+      <div>
+        <span class="muted-text">{{ t('subjects.randomizationGroup') }}</span
+        ><strong>{{
+          subject.randomization_arm_label ||
+          subject.randomization_arm_id ||
+          t('subjects.detail.notRandomized')
+        }}</strong>
       </div>
       <div>
         <span class="muted-text">{{ t('subjects.site') }}</span

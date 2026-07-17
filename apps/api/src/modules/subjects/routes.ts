@@ -97,7 +97,19 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
     ).value
     const items = sqlite
       .prepare(
-        `SELECT s.*, st.name AS site_name FROM subjects s JOIN sites st ON st.study_id = s.study_id AND st.name = s.site_name WHERE ${clauses.join(' AND ')} ORDER BY s.updated_at DESC LIMIT ? OFFSET ?`,
+        `SELECT s.*, st.name AS site_name,
+                ra.arm_id AS randomization_arm_id,
+                (SELECT json_extract(arm.value, '$.label')
+                 FROM json_each(rs.arms_json) arm
+                 WHERE json_extract(arm.value, '$.id') = ra.arm_id) AS randomization_arm_label
+         FROM subjects s
+         JOIN sites st ON st.study_id = s.study_id AND st.name = s.site_name
+         LEFT JOIN randomization_assignments ra
+           ON ra.study_id = s.study_id AND ra.subject_id = s.id
+         LEFT JOIN randomization_schemes rs
+           ON rs.study_id = s.study_id AND rs.id = ra.scheme_id
+         WHERE ${clauses.join(' AND ')}
+         ORDER BY s.updated_at DESC LIMIT ? OFFSET ?`,
       )
       .all(...values, filters.pageSize, (filters.page - 1) * filters.pageSize)
     return { items, total, page: filters.page, pageSize: filters.pageSize }
@@ -161,9 +173,17 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
     if (!auth) return
     const subject = sqlite
       .prepare(
-        `SELECT s.*, st.name AS site_name
+        `SELECT s.*, st.name AS site_name,
+                ra.arm_id AS randomization_arm_id,
+                (SELECT json_extract(arm.value, '$.label')
+                 FROM json_each(rs.arms_json) arm
+                 WHERE json_extract(arm.value, '$.id') = ra.arm_id) AS randomization_arm_label
          FROM subjects s
          JOIN sites st ON st.study_id = s.study_id AND st.name = s.site_name
+         LEFT JOIN randomization_assignments ra
+           ON ra.study_id = s.study_id AND ra.subject_id = s.id
+         LEFT JOIN randomization_schemes rs
+           ON rs.study_id = s.study_id AND rs.id = ra.scheme_id
          WHERE s.study_id = ? AND s.id = ?`,
       )
       .get(studyId, subjectId) as { site_name: string } | undefined

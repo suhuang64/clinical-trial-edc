@@ -24,6 +24,8 @@ interface SubjectRow {
   screening_number: string
   subject_number: string | null
   random_number: string | null
+  randomization_arm_id: string | null
+  randomization_arm_label: string | null
   status: SubjectStatus
   site_name: string
   updated_at: string
@@ -216,6 +218,14 @@ onMounted(load)
         <el-table-column :label="t('subjects.randomNumber')" min-width="130">
           <template #default="{ row }">{{ row.random_number || '—' }}</template>
         </el-table-column>
+        <el-table-column :label="t('subjects.randomizationGroup')" min-width="140">
+          <template #default="{ row }">
+            <strong v-if="row.randomization_arm_label || row.randomization_arm_id">
+              {{ row.randomization_arm_label || row.randomization_arm_id }}
+            </strong>
+            <span v-else>—</span>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('subjects.site')" min-width="180">
           <template #default="{ row }">{{ row.site_name }}</template>
         </el-table-column>
@@ -257,6 +267,15 @@ onMounted(load)
           <div>
             <dt>{{ t('subjects.randomNumber') }}</dt>
             <dd>{{ subject.random_number || '—' }}</dd>
+          </div>
+          <div>
+            <dt>{{ t('subjects.randomizationGroup') }}</dt>
+            <dd>
+              <strong v-if="subject.randomization_arm_label || subject.randomization_arm_id">
+                {{ subject.randomization_arm_label || subject.randomization_arm_id }}
+              </strong>
+              <span v-else>—</span>
+            </dd>
           </div>
           <div>
             <dt>{{ t('subjects.updatedAt') }}</dt>

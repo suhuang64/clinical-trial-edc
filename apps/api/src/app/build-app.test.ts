@@ -398,7 +398,33 @@ describe('API 基础能力', () => {
     })
     expect(assignmentResponse.statusCode).toBe(200)
     expect(assignmentResponse.json()).toMatchObject({ randomNumber: 'RND-0001' })
-    expect(['A', 'B']).toContain(assignmentResponse.json().armId)
+    const assignedArmId = assignmentResponse.json().armId as 'A' | 'B'
+    expect(['A', 'B']).toContain(assignedArmId)
+    const assignedArmLabel = assignedArmId === 'A' ? '治疗组 A' : '治疗组 B'
+
+    const randomizedSubjectList = await app!.inject({
+      method: 'GET',
+      url: `/api/v1/studies/${studyId}/subjects`,
+      headers,
+    })
+    expect(randomizedSubjectList.statusCode).toBe(200)
+    expect(
+      randomizedSubjectList.json().items.find((item: { id: string }) => item.id === subjectId),
+    ).toMatchObject({
+      randomization_arm_id: assignedArmId,
+      randomization_arm_label: assignedArmLabel,
+    })
+
+    const randomizedSubjectDetail = await app!.inject({
+      method: 'GET',
+      url: `/api/v1/studies/${studyId}/subjects/${subjectId}/records/context`,
+      headers,
+    })
+    expect(randomizedSubjectDetail.statusCode).toBe(200)
+    expect(randomizedSubjectDetail.json().subject).toMatchObject({
+      randomization_arm_id: assignedArmId,
+      randomization_arm_label: assignedArmLabel,
+    })
 
     const duplicateResponse = await app!.inject({
       method: 'POST',
