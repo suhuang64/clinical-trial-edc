@@ -1,0 +1,35 @@
+{
+  "name": "@edc/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "node --conditions=production dist/server.js",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests --exclude dist/**",
+    "admin:init": "tsx src/cli/init-admin.ts"
+  },
+  "dependencies": {
+    "@edc/contracts": "*",
+    "@edc/domain": "*",
+    "@fastify/cookie": "latest",
+    "@fastify/helmet": "latest",
+    "@fastify/multipart": "latest",
+    "@fastify/rate-limit": "latest",
+    "@fastify/swagger": "latest",
+    "@fastify/swagger-ui": "latest",
+    "argon2": "latest",
+    "better-sqlite3": "latest",
+    "csv-stringify": "latest",
+    "exceljs": "^4.4.0",
+    "fastify": "latest",
+    "fastify-type-provider-zod": "latest",
+    "kysely": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "latest"
+  }
+}

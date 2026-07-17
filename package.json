@@ -1,0 +1,47 @@
+{
+  "name": "clinical-trial-edc",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=11.0.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "npm.cmd run dev --workspace @edc/web",
+    "dev:api": "npm.cmd run dev --workspace @edc/api",
+    "start": "npm.cmd run start --workspace @edc/api",
+    "build": "npm.cmd run build --workspaces --if-present",
+    "typecheck": "npm.cmd run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "npm.cmd run test --workspaces --if-present",
+    "test:e2e": "node scripts/test-e2e.mjs",
+    "admin:init": "npm.cmd run admin:init --workspace @edc/api --"
+  },
+  "devDependencies": {
+    "@eslint/js": "latest",
+    "@playwright/test": "latest",
+    "@types/node": "latest",
+    "eslint": "latest",
+    "eslint-plugin-vue": "latest",
+    "globals": "latest",
+    "prettier": "latest",
+    "tsx": "latest",
+    "typescript": "latest",
+    "typescript-eslint": "latest",
+    "vite": "latest",
+    "vitest": "latest"
+  },
+  "allowScripts": {
+    "argon2@0.44.0": true,
+    "better-sqlite3@12.11.1": true,
+    "esbuild@0.28.1": true
+  }
+}

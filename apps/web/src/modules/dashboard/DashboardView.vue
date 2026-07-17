@@ -1,0 +1,503 @@
+<script setup lang="ts">
+import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { ElMessage } from 'element-plus'
+import { apiRequest, ApiClientError } from '@/api/client'
+import { useStudyStore } from '@/modules/studies/study.store'
+import { useSiteScopeStore } from '@/modules/studies/site-scope.store'
+
+interface DashboardData {
+  metrics: {
+    screened: number
+    enrolled: number
+    randomized: number
+    followupCompletionRate: number | null
+    expectedFollowupRecords: number
+    completedFollowupRecords: number
+  }
+  sites: Array<{
+    id: string
+    code: string
+    name: string
+    enrollment_target: number
+    enrolled: number
+  }>
+  enrollmentTrend: Array<{ period: string; value: number }>
+  statusDistribution: Array<{ status: string; value: number }>
+  recentActivities: Array<{
+    id: string
+    action: string
+    object_type: string
+    object_id: string | null
+    site_id: string | null
+    created_at: string
+  }>
+}
+
+const studyStore = useStudyStore()
+const siteScope = useSiteScopeStore()
+const { t, locale } = useI18n()
+const loading = ref(false)
+const exporting = ref(false)
+const error = ref('')
+const data = ref<DashboardData | null>(null)
+
+const statusLabels = computed<Record<string, string>>(() => ({
+  screening: t('subjects.statuses.screening'),
+  screen_failed: t('subjects.statuses.screenFailed'),
+  pending_enrollment: t('subjects.statuses.pendingEnrollment'),
+  enrolled: t('subjects.statuses.enrolled'),
+  completed: t('subjects.statuses.completed'),
+  withdrawn: t('subjects.statuses.withdrawn'),
+  lost_to_followup: t('subjects.statuses.lostToFollowup'),
+}))
+const actionLabels = computed<Record<string, string>>(() => ({
+  'subject.screening_created': t('dashboard.actions.screeningCreated'),
+  'subject.screening_concluded': t('dashboard.actions.screeningConcluded'),
+  'subject.enrolled': t('dashboard.actions.subjectEnrolled'),
+  'subject_event.created': t('dashboard.actions.eventCreated'),
+  'randomization.assigned': t('dashboard.actions.randomized'),
+  'data_record.created': t('dashboard.actions.dataCreated'),
+  'data_record.updated': t('dashboard.actions.dataUpdated'),
+  'data_record.deleted': t('dashboard.actions.dataDeleted'),
+  'file.uploaded': t('dashboard.actions.fileUploaded'),
+  'file.deleted': t('dashboard.actions.fileDeleted'),
+  'form.published': t('dashboard.actions.formPublished'),
+}))
+
+const metrics = computed(() => {
+  const values = data.value?.metrics
+  if (!values) return []
+  return [
+    {
+      label: t('dashboard.metrics.screened'),
+      value: String(values.screened),
+      note: t('dashboard.metrics.permissionScope'),
+    },
+    {
+      label: t('dashboard.metrics.enrolled'),
+      value: String(values.enrolled),
+      note: t('dashboard.metrics.subjectNumberAssigned'),
+    },
+    {
+      label: t('dashboard.metrics.randomized'),
+      value: String(values.randomized),
+      note: t('dashboard.metrics.randomNumberAssigned'),
+    },
+    {
+      label: t('dashboard.metrics.followupRate'),
+      value:
+        values.followupCompletionRate === null
+          ? t('dashboard.metrics.noPlan')
+          : `${values.followupCompletionRate}%`,
+      note: t('dashboard.metrics.plannedRecords', {
+        completed: values.completedFollowupRecords,
+        expected: values.expectedFollowupRecords,
+      }),
+    },
+  ]
+})
+
+const trendPoints = computed(() => {
+  const rows = data.value?.enrollmentTrend ?? []
+  if (!rows.length) return ''
+  const max = Math.max(...rows.map((row) => row.value), 1)
+  return rows
+    .map((row, index) => {
+      const x = rows.length === 1 ? 50 : (index / (rows.length - 1)) * 100
+      const y = 92 - (row.value / max) * 80
+      return `${x},${y}`
+    })
+    .join(' ')
+})
+
+function sitePercent(site: DashboardData['sites'][number]) {
+  if (!site.enrollment_target) return site.enrolled ? 100 : 0
+  return Math.min(100, Math.round((site.enrolled / site.enrollment_target) * 1000) / 10)
+}
+
+function formatTime(value: string) {
+  return new Intl.DateTimeFormat(locale.value, {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
+async function load() {
+  await studyStore.load()
+  if (!studyStore.currentStudyId) {
+    data.value = null
+    error.value = ''
+    return
+  }
+  loading.value = true
+  error.value = ''
+  try {
+    const query = siteScope.currentSiteId
+      ? `?${new URLSearchParams({ siteId: siteScope.currentSiteId })}`
+      : ''
+    data.value = await apiRequest<DashboardData>(
+      `/studies/${studyStore.currentStudyId}/dashboard${query}`,
+    )
+  } catch (loadError) {
+    data.value = null
+    error.value =
+      loadError instanceof ApiClientError ? loadError.message : t('dashboard.loadFailed')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function exportCsv() {
+  if (!studyStore.currentStudyId) return
+  exporting.value = true
+  try {
+    const response = await fetch(
+      `/api/v1/studies/${studyStore.currentStudyId}/dashboard/export.csv${
+        siteScope.currentSiteId
+          ? `?${new URLSearchParams({ siteId: siteScope.currentSiteId })}`
+          : ''
+      }`,
+      {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'X-CSRF-Token': sessionStorage.getItem('edc-csrf-token') ?? '' },
+      },
+    )
+    if (!response.ok) throw new Error(t('dashboard.exportFailed'))
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `dashboard-${studyStore.currentStudyId}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+    ElMessage.success(t('dashboard.exported'))
+  } catch {
+    ElMessage.error(t('dashboard.exportFailed'))
+  } finally {
+    exporting.value = false
+  }
+}
+
+watch([() => studyStore.currentStudyId, () => siteScope.currentSiteId], load, { immediate: true })
+</script>
+
+<template>
+  <div v-loading="loading" class="dashboard-page">
+    <section v-if="!studyStore.currentStudyId && !loading" class="panel empty-state">
+      <div>
+        <h2>{{ t('dashboard.selectStudy') }}</h2>
+        <p class="muted-text">{{ t('dashboard.scopeHint') }}</p>
+        <RouterLink class="el-button el-button--primary" to="/studies">
+          {{ t('dashboard.goToStudies') }}
+        </RouterLink>
+      </div>
+    </section>
+
+    <el-result v-else-if="error" icon="error" :title="t('dashboard.loadFailed')" :sub-title="error">
+      <template #extra>
+        <el-button type="primary" @click="load">{{ t('dashboard.retry') }}</el-button>
+      </template>
+    </el-result>
+
+    <template v-else-if="data">
+      <div class="dashboard-toolbar desktop-export-action">
+        <el-button :loading="exporting" @click="exportCsv">
+          {{ t('dashboard.exportCsv') }}
+        </el-button>
+      </div>
+      <section class="metric-grid" :aria-label="t('dashboard.keyMetrics')">
+        <article v-for="metric in metrics" :key="metric.label" class="metric-card panel">
+          <div class="metric-label">{{ metric.label }}</div>
+          <div class="metric-value">{{ metric.value }}</div>
+          <div class="metric-trend">{{ metric.note }}</div>
+        </article>
+      </section>
+
+      <section class="dashboard-grid">
+        <article class="panel enrollment-panel">
+          <header class="panel-header">
+            <div>
+              <h2>{{ t('dashboard.siteProgress') }}</h2>
+              <p class="muted-text">{{ t('dashboard.filteredByPermission') }}</p>
+            </div>
+          </header>
+          <div v-if="data.sites.length" class="site-progress-list">
+            <div v-for="site in data.sites" :key="site.id" class="site-progress-row">
+              <div class="site-progress-label">
+                <strong>{{ site.code }} · {{ site.name }}</strong>
+                <span
+                  >{{ site.enrolled }} /
+                  {{ site.enrollment_target || t('dashboard.noTarget') }}</span
+                >
+              </div>
+              <div
+                class="progress-track"
+                role="progressbar"
+                :aria-label="t('dashboard.siteProgressLabel', { site: site.name })"
+                :aria-valuenow="sitePercent(site)"
+                aria-valuemin="0"
+                aria-valuemax="100"
+              >
+                <span :style="{ width: `${sitePercent(site)}%` }" />
+              </div>
+              <span class="progress-value">{{ sitePercent(site) }}%</span>
+            </div>
+          </div>
+          <div v-else class="empty-state">
+            <div>
+              <h3>{{ t('dashboard.noSites') }}</h3>
+              <p class="muted-text">{{ t('dashboard.noSitesHint') }}</p>
+            </div>
+          </div>
+          <el-table
+            v-if="data.sites.length"
+            :data="data.sites"
+            class="accessible-table"
+            size="small"
+            :aria-label="t('dashboard.siteProgressTable')"
+          >
+            <el-table-column prop="code" :label="t('dashboard.siteCode')" />
+            <el-table-column prop="name" :label="t('dashboard.siteName')" />
+            <el-table-column prop="enrolled" :label="t('dashboard.enrolled')" />
+            <el-table-column prop="enrollment_target" :label="t('dashboard.target')" />
+          </el-table>
+        </article>
+
+        <article class="panel trend-panel">
+          <header class="panel-header">
+            <div>
+              <h2>{{ t('dashboard.trend') }}</h2>
+              <p class="muted-text">{{ t('dashboard.trendHint') }}</p>
+            </div>
+          </header>
+          <div v-if="data.enrollmentTrend.length" class="trend-chart">
+            <svg
+              viewBox="0 0 100 100"
+              role="img"
+              :aria-label="t('dashboard.trendChart')"
+              preserveAspectRatio="none"
+            >
+              <line x1="0" y1="92" x2="100" y2="92" />
+              <polyline :points="trendPoints" />
+            </svg>
+            <div class="trend-labels">
+              <span v-for="row in data.enrollmentTrend" :key="row.period"
+                >{{ row.period }}<strong>{{ row.value }}</strong></span
+              >
+            </div>
+          </div>
+          <div v-else class="empty-state">
+            <div>
+              <h3>{{ t('dashboard.noTrend') }}</h3>
+              <p class="muted-text">{{ t('dashboard.noTrendHint') }}</p>
+            </div>
+          </div>
+          <table v-if="data.enrollmentTrend.length" class="sr-only-table">
+            <caption>
+              {{
+                t('dashboard.trendData')
+              }}
+            </caption>
+            <thead>
+              <tr>
+                <th>{{ t('dashboard.month') }}</th>
+                <th>{{ t('dashboard.enrollmentCount') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in data.enrollmentTrend" :key="row.period">
+                <td>{{ row.period }}</td>
+                <td>{{ row.value }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </article>
+
+        <article class="panel status-panel">
+          <header class="panel-header">
+            <h2>{{ t('dashboard.subjectStatus') }}</h2>
+          </header>
+          <div v-if="data.statusDistribution.length" class="status-list">
+            <div v-for="row in data.statusDistribution" :key="row.status">
+              <span>{{ statusLabels[row.status] ?? row.status }}</span
+              ><strong>{{ row.value }}</strong>
+            </div>
+          </div>
+          <div v-else class="empty-state">
+            <div>
+              <h3>{{ t('dashboard.noSubjects') }}</h3>
+              <p class="muted-text">{{ t('dashboard.noSubjectsHint') }}</p>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel activity-panel">
+          <header class="panel-header">
+            <h2>{{ t('dashboard.recentActivity') }}</h2>
+          </header>
+          <ul v-if="data.recentActivities.length" class="activity-list">
+            <li v-for="activity in data.recentActivities" :key="activity.id" class="activity-item">
+              <span class="activity-dot" aria-hidden="true" />
+              <div>
+                <div>{{ actionLabels[activity.action] ?? activity.action }}</div>
+                <small class="muted-text"
+                  >{{ formatTime(activity.created_at) }} · {{ activity.object_type }}</small
+                >
+              </div>
+            </li>
+          </ul>
+          <div v-else class="empty-state">
+            <div>
+              <h3>{{ t('dashboard.noActivity') }}</h3>
+              <p class="muted-text">{{ t('dashboard.noActivityHint') }}</p>
+            </div>
+          </div>
+        </article>
+      </section>
+    </template>
+  </div>
+</template>
+
+<style scoped>
+.dashboard-page {
+  min-height: 360px;
+}
+.dashboard-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+.dashboard-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.panel-header {
+  align-items: flex-start;
+}
+.panel-header h2,
+.panel-header p {
+  margin: 0;
+}
+.site-progress-list {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+.site-progress-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(120px, 2fr) 56px;
+  align-items: center;
+  gap: 12px;
+}
+.site-progress-label {
+  display: grid;
+  gap: 2px;
+}
+.site-progress-label span,
+.progress-value {
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.progress-track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+}
+.progress-track span {
+  display: block;
+  height: 100%;
+  background: var(--color-primary);
+}
+.accessible-table {
+  border-top: 1px solid var(--color-border);
+}
+.trend-chart {
+  padding: 16px;
+}
+.trend-chart svg {
+  width: 100%;
+  height: 180px;
+  overflow: visible;
+}
+.trend-chart line {
+  stroke: var(--color-border);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.trend-chart polyline {
+  fill: none;
+  stroke: var(--color-primary);
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
+.trend-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+.trend-labels span {
+  display: grid;
+  text-align: center;
+}
+.trend-labels strong {
+  color: var(--color-text);
+}
+.status-list {
+  display: grid;
+  gap: 0;
+  padding: 8px 16px 16px;
+}
+.status-list > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.sr-only-table {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+@media (max-width: 1100px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 767px) {
+  .desktop-export-action {
+    display: none;
+  }
+  .site-progress-row {
+    grid-template-columns: 1fr auto;
+  }
+  .progress-track {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    height: 12px;
+  }
+  .progress-value {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .accessible-table {
+    display: none;
+  }
+  .trend-labels {
+    overflow-x: auto;
+    justify-content: flex-start;
+  }
+  .trend-labels span {
+    min-width: 64px;
+  }
+}
+</style>
