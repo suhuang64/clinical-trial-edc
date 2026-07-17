@@ -303,10 +303,11 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
 
     const recentActivities = sqlite
       .prepare(
-        `SELECT id, action, object_type, object_id, site_name, created_at
+        `SELECT id, action, object_type, object_id, site_name,
+                strftime('%Y-%m-%dT%H:%M:%fZ', created_at) AS created_at
          FROM audit_events
          WHERE study_id = ?${auditScope.sql}
-         ORDER BY created_at DESC
+         ORDER BY julianday(created_at) DESC
          LIMIT 8`,
       )
       .all(studyId, ...auditScope.values)

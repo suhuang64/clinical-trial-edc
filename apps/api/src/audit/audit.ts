@@ -42,6 +42,7 @@ export async function writeAudit(input: AuditInput) {
       reason: input.reason ?? null,
       ip_address: input.ipAddress ?? null,
       user_agent: input.userAgent ?? null,
+      created_at: new Date().toISOString(),
     })
     .execute()
 }

@@ -1,6 +1,6 @@
-import { existsSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, readdirSync, rmSync, unlinkSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 
@@ -19,6 +19,7 @@ let closeDatabase: (() => Promise<void>) | undefined
 let sessionCookie = ''
 let csrfToken = ''
 let testUserSequence = 0
+const successfulMutationRequests: Array<{ id: string; method: string; url: string }> = []
 
 async function createPlatformUser(
   headers: Record<string, string>,
@@ -121,6 +122,19 @@ beforeAll(async () => {
   sessionCookie = `edc_session=${session.token}`
   csrfToken = session.csrfToken
   app = await buildApp()
+  app.addHook('onResponse', async (request, reply) => {
+    if (
+      ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method) &&
+      reply.statusCode >= 200 &&
+      reply.statusCode < 300
+    ) {
+      successfulMutationRequests.push({
+        id: request.id,
+        method: request.method,
+        url: request.url.split('?')[0]!,
+      })
+    }
+  })
 }, 60_000)
 
 afterAll(async () => {
@@ -365,6 +379,21 @@ describe('API 基础能力', () => {
     expect(subjectResponse.statusCode).toBe(201)
     expect(subjectResponse.json().screeningNumber).toBe('PRE-00001')
     const subjectId = subjectResponse.json().id as string
+    const subjectCreateAudit = await app!.inject({
+      method: 'GET',
+      url: `/api/v1/studies/${studyId}/audit?action=subject.screening_created`,
+      headers,
+    })
+    expect(subjectCreateAudit.statusCode).toBe(200)
+    expect(subjectCreateAudit.json().items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: 'subject.screening_created',
+          objectId: subjectId,
+          createdAt: expect.stringMatching(/Z$/),
+        }),
+      ]),
+    )
 
     const frozenNumbering = await app!.inject({
       method: 'PUT',
@@ -445,6 +474,49 @@ describe('API 基础能力', () => {
           )
         : [],
     ).toHaveLength(0)
+    expect(existsSync(uploadPath) ? readdirSync(uploadPath, { recursive: true }) : []).toHaveLength(
+      0,
+    )
+
+    const missingBoundary = `----edc-missing-file-${randomUUID()}`
+    const missingPayload = Buffer.from(
+      `--${missingBoundary}\r\nContent-Disposition: form-data; name="file"; filename="missing-storage.pdf"\r\nContent-Type: application/pdf\r\n\r\n%PDF-1.4 missing storage test\r\n--${missingBoundary}--\r\n`,
+    )
+    const missingUpload = await app!.inject({
+      method: 'POST',
+      url: `/api/v1/studies/${studyId}/subjects/${subjectId}/files/supporting_document`,
+      headers: {
+        ...headers,
+        'content-type': `multipart/form-data; boundary=${missingBoundary}`,
+      },
+      payload: missingPayload,
+    })
+    expect(missingUpload.statusCode).toBe(201)
+    const missingFileId = missingUpload.json().id as string
+    const storedRelativePath = readdirSync(uploadPath, { recursive: true }).find((path) =>
+      String(path).endsWith('.pdf'),
+    )
+    expect(storedRelativePath).toBeDefined()
+    const storedAbsolutePath = resolve(uploadPath, String(storedRelativePath))
+    const subjectUploadDirectory = dirname(storedAbsolutePath)
+    unlinkSync(storedAbsolutePath)
+    expect(existsSync(subjectUploadDirectory)).toBe(true)
+    const deleteMissingFile = await app!.inject({
+      method: 'DELETE',
+      url: `/api/v1/studies/${studyId}/subjects/${subjectId}/files/${missingFileId}`,
+      headers,
+    })
+    expect(deleteMissingFile.statusCode).toBe(204)
+    const filesAfterMissingDelete = await app!.inject({
+      method: 'GET',
+      url: `/api/v1/studies/${studyId}/subjects/${subjectId}/files`,
+      headers,
+    })
+    expect(filesAfterMissingDelete.json().items).toHaveLength(0)
+    expect(existsSync(subjectUploadDirectory)).toBe(false)
+    expect(existsSync(uploadPath) ? readdirSync(uploadPath, { recursive: true }) : []).toHaveLength(
+      0,
+    )
 
     const schemeResponse = await app!.inject({
       method: 'PUT',
@@ -1794,6 +1866,14 @@ describe('API 基础能力', () => {
       headers,
     })
     expect(followupWorklist.statusCode).toBe(200)
+    const followupSubject = followupWorklist
+      .json()
+      .items.find((item: { id: string }) => item.id === subjectId)
+    expect(followupSubject.overall).toMatchObject({
+      expectedCount: 2,
+      submittedCount: 2,
+      status: 'completed',
+    })
     expect(followupWorklist.json().items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -2386,4 +2466,24 @@ describe('API 基础能力', () => {
       await waitForMigration(studyId, formId, migrationResponse.json().migrationJobId, headers),
     ).toMatchObject({ status: 'completed', processed_records: 1000, total_records: 1000 })
   }, 60_000)
+
+  it('所有已覆盖的成功业务写请求都生成审计日志', async () => {
+    const { sqlite } = await import('../db/database.js')
+    const explicitlyReadOnlyPosts = [
+      /\/forms\/import\/preview$/,
+      /\/forms\/import\/excel\/preview$/,
+      /\/randomization\/scheme\/simulate$/,
+    ]
+    const idempotentWithoutWrite = [/\/randomization\/subjects\/[^/]+\/assign$/]
+    const missing = successfulMutationRequests.filter((request) => {
+      if (explicitlyReadOnlyPosts.some((pattern) => pattern.test(request.url))) return false
+      const count = (
+        sqlite
+          .prepare('SELECT COUNT(*) AS value FROM audit_events WHERE request_id = ?')
+          .get(request.id) as { value: number }
+      ).value
+      return count === 0 && !idempotentWithoutWrite.some((pattern) => pattern.test(request.url))
+    })
+    expect(missing).toEqual([])
+  })
 })

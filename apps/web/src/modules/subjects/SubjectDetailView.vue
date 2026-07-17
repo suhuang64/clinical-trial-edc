@@ -159,6 +159,11 @@ const selectedForm = ref<FormContext | null>(null)
 const selectedVisitId = ref<string | null>(null)
 const selectedRecord = ref<RecordRow | null>(null)
 const values = ref<FormValueMap>({})
+const recordViewOpen = ref(false)
+const recordViewLoadingId = ref('')
+const viewingRecord = ref<RecordRow | null>(null)
+const viewingDefinition = ref<FormDefinition | null>(null)
+const viewingValues = ref<FormValueMap>({})
 const rowVersion = ref(1)
 const showErrors = ref(false)
 const serverErrors = ref<Record<string, string[]>>({})
@@ -670,6 +675,30 @@ async function openEdit(record: RecordRow) {
   }
 }
 
+async function openRecordView(record: RecordRow) {
+  if (!studyStore.currentStudyId) return
+  recordViewLoadingId.value = record.id
+  try {
+    const detail = await apiRequest<{
+      record: RecordRow
+      definition: FormDefinition
+      values: FormValueMap
+    }>(`/studies/${studyStore.currentStudyId}/subjects/${subjectId.value}/records/${record.id}`)
+    viewingRecord.value = { ...record, row_version: detail.record.row_version }
+    viewingDefinition.value = detail.definition
+    viewingValues.value = detail.values
+    recordViewOpen.value = true
+  } catch (error) {
+    ElMessage.error(
+      error instanceof ApiClientError
+        ? error.message
+        : t('subjects.detail.messages.recordLoadFailed'),
+    )
+  } finally {
+    recordViewLoadingId.value = ''
+  }
+}
+
 async function save(status: 'draft' | 'submitted') {
   if (!studyStore.currentStudyId || !selectedForm.value) return
   showErrors.value = status === 'submitted'
@@ -1039,7 +1068,21 @@ watch(subjectId, load, { immediate: true })
               />
             </template>
           </el-table-column>
-          <el-table-column prop="updated_at" :label="t('subjects.updatedAt')" min-width="180" />
+          <el-table-column :label="t('subjects.updatedAt')" min-width="180">
+            <template #default="scope">{{ formatDateTime(scope.row.updated_at) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('subjects.actions')" width="90" fixed="right">
+            <template #default="scope">
+              <el-button
+                link
+                type="primary"
+                :loading="recordViewLoadingId === scope.row.id"
+                @click="openRecordView(scope.row)"
+              >
+                {{ t('subjects.detail.view') }}
+              </el-button>
+            </template>
+          </el-table-column>
         </el-table>
       </el-tab-pane>
       <el-tab-pane :label="t('subjects.detail.tabs.events')" name="events">
@@ -1145,7 +1188,7 @@ watch(subjectId, load, { immediate: true })
             <el-timeline-item
               v-for="item in timeline"
               :key="item.id"
-              :timestamp="item.created_at"
+              :timestamp="formatDateTime(item.created_at)"
               placement="top"
             >
               <strong>{{ timelineActionLabels[item.action] ?? item.action }}</strong>
@@ -1233,6 +1276,42 @@ watch(subjectId, load, { immediate: true })
       <el-button @click="screeningDrawerOpen = false">{{ t('subjects.detail.cancel') }}</el-button>
       <el-button type="primary" :loading="screeningSaving" @click="saveScreening">
         {{ t('subjects.detail.saveScreening') }}
+      </el-button>
+    </template>
+  </el-drawer>
+
+  <el-drawer
+    v-model="recordViewOpen"
+    class="record-view-drawer"
+    :title="
+      viewingRecord
+        ? t('subjects.detail.viewForm', { name: viewingRecord.form_name })
+        : t('subjects.detail.recordDetails')
+    "
+    size="min(880px, 100vw)"
+  >
+    <el-alert
+      v-if="viewingRecord"
+      :title="`${viewingRecord.form_code} · v${viewingRecord.version_number}${viewingRecord.visit_name ? ` · ${viewingRecord.visit_name}` : ''} · #${viewingRecord.repeat_index}`"
+      :description="t('subjects.detail.readOnlyRecordHint')"
+      type="info"
+      show-icon
+      :closable="false"
+    />
+    <DynamicFormRenderer
+      v-if="viewingDefinition"
+      v-model="viewingValues"
+      :definition="viewingDefinition"
+      disabled
+      :file-context="{
+        studyId: studyStore.currentStudyId,
+        subjectId,
+        ...(viewingRecord ? { recordId: viewingRecord.id } : {}),
+      }"
+    />
+    <template #footer>
+      <el-button type="primary" @click="recordViewOpen = false">
+        {{ t('subjects.detail.close') }}
       </el-button>
     </template>
   </el-drawer>

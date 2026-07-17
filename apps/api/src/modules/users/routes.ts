@@ -256,13 +256,14 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     const rows = sqlite
       .prepare(
         `SELECT a.id, a.request_id, a.actor_user_id, a.action, a.after_json,
-                a.ip_address, a.user_agent, a.created_at,
+                a.ip_address, a.user_agent,
+                strftime('%Y-%m-%dT%H:%M:%fZ', a.created_at) AS created_at,
                 u.username AS actor_username, u.display_name AS actor_name
          FROM audit_events a
          LEFT JOIN users u ON u.id = a.actor_user_id
          WHERE a.study_id IS NULL
            AND a.action IN ('auth.login_succeeded', 'auth.login_failed')
-         ORDER BY a.created_at DESC LIMIT ? OFFSET ?`,
+         ORDER BY julianday(a.created_at) DESC LIMIT ? OFFSET ?`,
       )
       .all(parsed.data.pageSize, (parsed.data.page - 1) * parsed.data.pageSize) as Array<{
       id: string

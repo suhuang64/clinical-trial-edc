@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readdirSync,
   renameSync,
+  rmdirSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
@@ -65,7 +66,7 @@ export interface FileRow {
 export interface QuarantinedFile {
   row: FileRow
   originalPath: string
-  quarantinePath: string
+  quarantinePath: string | null
 }
 
 function safeStoragePath(root: string, relativePath: string) {
@@ -75,6 +76,28 @@ function safeStoragePath(root: string, relativePath: string) {
     throw new Error('文件路径超出存储目录')
   }
   return target
+}
+
+function removeEmptyUploadDirectories(filePath: string) {
+  const uploadRoot = resolve(config.uploadRoot)
+  let current = dirname(resolve(filePath))
+  if (current !== uploadRoot && !current.startsWith(`${uploadRoot}${sep}`)) {
+    throw new Error('文件目录超出上传根目录')
+  }
+  while (current !== uploadRoot) {
+    try {
+      rmdirSync(current)
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'ENOENT') {
+        current = dirname(current)
+        continue
+      }
+      if (code === 'ENOTEMPTY' || code === 'EEXIST') return
+      throw error
+    }
+    current = dirname(current)
+  }
 }
 
 function auditInsert(input: {
@@ -152,7 +175,10 @@ function quarantineRows(rows: FileRow[]): QuarantinedFile[] {
   try {
     for (const row of rows) {
       const originalPath = safeStoragePath(config.uploadRoot, row.storage_path)
-      if (!existsSync(originalPath)) throw new Error(`Missing file ${row.id}`)
+      if (!existsSync(originalPath)) {
+        quarantined.push({ row, originalPath, quarantinePath: null })
+        continue
+      }
       const quarantinePath = safeStoragePath(
         config.quarantineRoot,
         `${row.id}--${basename(row.storage_path)}`,
@@ -190,7 +216,8 @@ export function quarantineFilesForSubject(
 
 export function restoreQuarantinedFiles(files: QuarantinedFile[]) {
   for (const file of [...files].reverse()) {
-    if (!existsSync(file.quarantinePath) || existsSync(file.originalPath)) continue
+    if (!file.quarantinePath || !existsSync(file.quarantinePath) || existsSync(file.originalPath))
+      continue
     mkdirSync(dirname(file.originalPath), { recursive: true })
     renameSync(file.quarantinePath, file.originalPath)
   }
@@ -198,7 +225,8 @@ export function restoreQuarantinedFiles(files: QuarantinedFile[]) {
 
 export function purgeQuarantinedFiles(files: QuarantinedFile[]) {
   for (const file of files) {
-    if (existsSync(file.quarantinePath)) unlinkSync(file.quarantinePath)
+    if (file.quarantinePath && existsSync(file.quarantinePath)) unlinkSync(file.quarantinePath)
+    removeEmptyUploadDirectories(file.originalPath)
   }
 }
 
@@ -472,18 +500,15 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
         .send({ code: 'FILE_NOT_FOUND', message: '文件不存在', requestId: request.id })
     }
     const originalPath = safeStoragePath(config.uploadRoot, row.storage_path)
-    if (!existsSync(originalPath)) {
-      return reply.code(409).send({
-        code: 'FILE_STORAGE_MISSING',
-        message: '文件存储缺失，未删除数据库记录',
-        requestId: request.id,
-      })
-    }
     const quarantineName = `${row.id}--${basename(row.storage_path)}`
     const quarantinePath = safeStoragePath(config.quarantineRoot, quarantineName)
     mkdirSync(config.quarantineRoot, { recursive: true })
+    let quarantined = false
     try {
-      renameSync(originalPath, quarantinePath)
+      if (existsSync(originalPath)) {
+        renameSync(originalPath, quarantinePath)
+        quarantined = true
+      }
       sqlite.transaction(() => {
         sqlite
           .prepare(
@@ -500,10 +525,9 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
           action: 'file.deleted',
           before: publicFile(row),
         })
-        unlinkSync(quarantinePath)
       })()
     } catch (error) {
-      if (existsSync(quarantinePath) && !existsSync(originalPath)) {
+      if (quarantined && existsSync(quarantinePath) && !existsSync(originalPath)) {
         mkdirSync(dirname(originalPath), { recursive: true })
         renameSync(quarantinePath, originalPath)
       }
@@ -513,6 +537,12 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
         message: '文件删除失败，原文件和数据库记录已保留',
         requestId: request.id,
       })
+    }
+    try {
+      if (quarantined && existsSync(quarantinePath)) unlinkSync(quarantinePath)
+      removeEmptyUploadDirectories(originalPath)
+    } catch (error) {
+      request.log.error(error, '文件数据库记录已删除，但隔离文件或空目录清理失败')
     }
     return reply.code(204).send()
   })

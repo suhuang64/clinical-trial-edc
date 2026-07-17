@@ -23,6 +23,14 @@ interface VisitSummary {
   updatedAt: string | null
 }
 
+interface OverallSummary {
+  expectedCount: number
+  submittedCount: number
+  draftCount: number
+  status: VisitStatus
+  updatedAt: string | null
+}
+
 interface FollowupSubject {
   id: string
   screening_number: string
@@ -30,6 +38,7 @@ interface FollowupSubject {
   random_number: string | null
   status: string
   site_name: string
+  overall: OverallSummary
   visits: VisitSummary[]
 }
 
@@ -60,26 +69,7 @@ const currentStudyId = computed(() => studyStore.currentStudyId)
 
 function selectedVisit(subject: FollowupSubject) {
   if (visitId.value) return subject.visits.find((visit) => visit.id === visitId.value) ?? null
-  const applicable = subject.visits.filter((visit) => visit.expectedCount > 0)
-  if (!applicable.length) return null
-  const submittedCount = applicable.reduce((sum, visit) => sum + visit.submittedCount, 0)
-  const expectedCount = applicable.reduce((sum, visit) => sum + visit.expectedCount, 0)
-  const draftCount = applicable.reduce((sum, visit) => sum + visit.draftCount, 0)
-  return {
-    id: 'all',
-    code: 'ALL',
-    name: t('followups.allVisits'),
-    expectedCount,
-    submittedCount,
-    draftCount,
-    status:
-      submittedCount >= expectedCount
-        ? ('completed' as const)
-        : submittedCount > 0 || draftCount > 0
-          ? ('in_progress' as const)
-          : ('not_started' as const),
-    updatedAt: null,
-  }
+  return subject.overall
 }
 
 function statusPresentation(subject: FollowupSubject) {

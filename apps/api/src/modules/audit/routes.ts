@@ -96,11 +96,11 @@ export const auditRoutes: FastifyPluginAsync = async (app) => {
       values.push(filters.subjectId)
     }
     if (filters.dateFrom) {
-      clauses.push('a.created_at >= ?')
+      clauses.push('julianday(a.created_at) >= julianday(?)')
       values.push(`${filters.dateFrom}T00:00:00.000Z`)
     }
     if (filters.dateTo) {
-      clauses.push('a.created_at <= ?')
+      clauses.push('julianday(a.created_at) <= julianday(?)')
       values.push(`${filters.dateTo}T23:59:59.999Z`)
     }
     const where = clauses.join(' AND ')
@@ -115,12 +115,17 @@ export const auditRoutes: FastifyPluginAsync = async (app) => {
     ).value
     const rows = sqlite
       .prepare(
-        `SELECT a.*, u.username AS actor_username, u.display_name AS actor_name, st.name AS site_name
+        `SELECT a.id, a.request_id, a.actor_user_id, a.study_id, a.subject_id,
+                a.object_type, a.object_id, a.action, a.before_json, a.after_json, a.reason,
+                a.ip_address, a.user_agent,
+                strftime('%Y-%m-%dT%H:%M:%fZ', a.created_at) AS created_at,
+                u.username AS actor_username, u.display_name AS actor_name,
+                COALESCE(st.name, a.site_name) AS site_name
          FROM audit_events a
          LEFT JOIN users u ON u.id = a.actor_user_id
          LEFT JOIN sites st ON st.study_id = a.study_id AND st.name = a.site_name
          WHERE ${where}
-         ORDER BY a.created_at DESC
+         ORDER BY julianday(a.created_at) DESC
          LIMIT ? OFFSET ?`,
       )
       .all(...values, filters.pageSize, (filters.page - 1) * filters.pageSize) as AuditRow[]

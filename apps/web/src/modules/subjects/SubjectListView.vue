@@ -9,15 +9,7 @@ import { useViewport } from '@/composables/useViewport'
 import { useStudyStore } from '@/modules/studies/study.store'
 import { useSiteScopeStore } from '@/modules/studies/site-scope.store'
 import StatusPill from '@/components/ui/StatusPill.vue'
-
-type SubjectStatus =
-  | 'screening'
-  | 'screen_failed'
-  | 'pending_enrollment'
-  | 'enrolled'
-  | 'completed'
-  | 'withdrawn'
-  | 'lost_to_followup'
+import { getSubjectStatusPresentation, type SubjectStatus } from './subject-status-presentation'
 
 interface SubjectRow {
   id: string
@@ -62,50 +54,8 @@ const statusOptions = computed<Array<{ value: SubjectStatus; label: string }>>((
 ])
 
 function presentation(subject: SubjectRow) {
-  if (subject.random_number)
-    return {
-      label: t('subjects.statuses.randomized'),
-      tone: 'info' as const,
-      mobileType: 'primary' as const,
-    }
-  const map = {
-    screening: {
-      label: t('subjects.statuses.screening'),
-      tone: 'warning' as const,
-      mobileType: 'warning' as const,
-    },
-    screen_failed: {
-      label: t('subjects.statuses.screenFailed'),
-      tone: 'danger' as const,
-      mobileType: 'danger' as const,
-    },
-    pending_enrollment: {
-      label: t('subjects.statuses.pendingEnrollment'),
-      tone: 'warning' as const,
-      mobileType: 'warning' as const,
-    },
-    enrolled: {
-      label: t('subjects.statuses.enrolled'),
-      tone: 'success' as const,
-      mobileType: 'success' as const,
-    },
-    completed: {
-      label: t('subjects.statuses.completed'),
-      tone: 'success' as const,
-      mobileType: 'success' as const,
-    },
-    withdrawn: {
-      label: t('subjects.statuses.withdrawn'),
-      tone: 'neutral' as const,
-      mobileType: 'default' as const,
-    },
-    lost_to_followup: {
-      label: t('subjects.statuses.lostToFollowup'),
-      tone: 'danger' as const,
-      mobileType: 'danger' as const,
-    },
-  }
-  return map[subject.status]
+  const statusPresentation = getSubjectStatusPresentation(subject)
+  return { ...statusPresentation, label: t(statusPresentation.labelKey) }
 }
 
 async function load() {

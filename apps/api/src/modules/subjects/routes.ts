@@ -210,11 +210,12 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
     const items = sqlite
       .prepare(
         `SELECT a.id, a.action, a.object_type, a.object_id,
-                a.reason, a.created_at, u.display_name AS actor_name
+                a.reason, strftime('%Y-%m-%dT%H:%M:%fZ', a.created_at) AS created_at,
+                u.display_name AS actor_name
          FROM audit_events a
          LEFT JOIN users u ON u.id = a.actor_user_id
          WHERE a.study_id = ? AND a.site_name = ? AND a.subject_id = ?
-         ORDER BY a.created_at DESC`,
+         ORDER BY julianday(a.created_at) DESC`,
       )
       .all(studyId, subject.site_name, subjectId)
     return { items }

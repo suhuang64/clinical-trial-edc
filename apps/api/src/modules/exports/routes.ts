@@ -164,23 +164,24 @@ function exportRows(
   const values: unknown[] = [studyId]
   appendScope(clauses, values, 'a.site_name', siteName)
   if (dateFrom) {
-    clauses.push('a.created_at >= ?')
+    clauses.push('julianday(a.created_at) >= julianday(?)')
     values.push(`${dateFrom}T00:00:00.000Z`)
   }
   if (dateTo) {
-    clauses.push('a.created_at <= ?')
+    clauses.push('julianday(a.created_at) <= julianday(?)')
     values.push(`${dateTo}T23:59:59.999Z`)
   }
   return sqlite
     .prepare(
-      `SELECT a.created_at, u.username AS actor_username, u.display_name AS actor_name,
+      `SELECT strftime('%Y-%m-%dT%H:%M:%fZ', a.created_at) AS created_at,
+              u.username AS actor_username, u.display_name AS actor_name,
               st.name AS center_name, a.subject_id, a.action, a.object_type, a.object_id,
               a.before_json, a.after_json, a.reason, a.request_id, a.ip_address
        FROM audit_events a
        LEFT JOIN users u ON u.id = a.actor_user_id
        LEFT JOIN sites st ON st.study_id = a.study_id AND st.name = a.site_name
        WHERE ${clauses.join(' AND ')}
-       ORDER BY a.created_at`,
+       ORDER BY julianday(a.created_at)`,
     )
     .all(...values) as Array<Record<string, unknown>>
 }
