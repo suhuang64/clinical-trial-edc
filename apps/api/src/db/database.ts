@@ -3,7 +3,7 @@ import { dirname } from 'node:path'
 import Database from 'better-sqlite3'
 import { Kysely, SqliteDialect } from 'kysely'
 import { config } from '../config.js'
-import { runMigrations } from './migrate.js'
+import { initializeSchema } from './schema.js'
 import type { DatabaseSchema } from './types.js'
 import { SqliteNumberingRepository } from './repositories/numbering-repository.js'
 
@@ -14,7 +14,7 @@ sqlite.pragma('foreign_keys = ON')
 sqlite.pragma('journal_mode = WAL')
 sqlite.pragma('busy_timeout = 5000')
 sqlite.pragma('synchronous = NORMAL')
-runMigrations(sqlite)
+initializeSchema(sqlite)
 
 export const db = new Kysely<DatabaseSchema>({ dialect: new SqliteDialect({ database: sqlite }) })
 export const numberingRepository = new SqliteNumberingRepository(sqlite)

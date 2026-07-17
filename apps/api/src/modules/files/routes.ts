@@ -44,13 +44,13 @@ const listQuerySchema = z.object({
 interface SubjectRow {
   id: string
   study_id: string
-  site_name: string
+  site_id: string
 }
 
 export interface FileRow {
   id: string
   study_id: string
-  site_name: string
+  site_id: string
   subject_id: string
   record_id: string | null
   field_key: string
@@ -104,26 +104,31 @@ function auditInsert(input: {
   request: FastifyRequest
   actorUserId: string
   studyId: string
-  siteName: string
+  siteId: string
   subjectId: string
   objectId: string
   action: string
   before?: unknown
   after?: unknown
 }) {
+  const siteName = (
+    sqlite.prepare('SELECT name FROM sites WHERE id = ?').get(input.siteId) as
+      { name: string } | undefined
+  )?.name
   sqlite
     .prepare(
       `INSERT INTO audit_events
-       (id, request_id, actor_user_id, study_id, site_name, subject_id, object_type, object_id, action,
+       (id, request_id, actor_user_id, study_id, site_id, site_name_snapshot, subject_id, object_type, object_id, action,
         before_json, after_json, reason, ip_address, user_agent, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'uploaded_file', ?, ?, ?, ?, NULL, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'uploaded_file', ?, ?, ?, ?, NULL, ?, ?, ?)`,
     )
     .run(
       randomUUID(),
       input.request.id,
       input.actorUserId,
       input.studyId,
-      input.siteName,
+      input.siteId,
+      siteName ?? null,
       input.subjectId,
       input.objectId,
       input.action,
@@ -144,7 +149,7 @@ async function authorizeSubject(
   const auth = await requireStudyPermission(request, reply, studyId, permission)
   if (!auth) return null
   const subject = sqlite
-    .prepare('SELECT id, study_id, site_name FROM subjects WHERE study_id = ? AND id = ?')
+    .prepare('SELECT id, study_id, site_id FROM subjects WHERE study_id = ? AND id = ?')
     .get(studyId, subjectId) as SubjectRow | undefined
   if (!subject) {
     await reply
@@ -152,7 +157,7 @@ async function authorizeSubject(
       .send({ code: 'SUBJECT_NOT_FOUND', message: '受试者不存在', requestId: request.id })
     return null
   }
-  if (!(await requireAllowedSite(auth, subject.site_name, request, reply))) return null
+  if (!(await requireAllowedSite(auth, subject.site_id, request, reply))) return null
   return { auth, subject }
 }
 
@@ -202,15 +207,15 @@ export function quarantineFilesForRecord(recordId: string): QuarantinedFile[] {
 
 export function quarantineFilesForSubject(
   studyId: string,
-  siteName: string,
+  siteId: string,
   subjectId: string,
 ): QuarantinedFile[] {
   const rows = sqlite
     .prepare(
       `SELECT * FROM uploaded_files
-       WHERE study_id = ? AND site_name = ? AND subject_id = ? ORDER BY created_at`,
+       WHERE study_id = ? AND site_id = ? AND subject_id = ? ORDER BY created_at`,
     )
-    .all(studyId, siteName, subjectId) as FileRow[]
+    .all(studyId, siteId, subjectId) as FileRow[]
   return quarantineRows(rows)
 }
 
@@ -268,8 +273,8 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
       })
     }
     const { subject } = authorization
-    const clauses = ['study_id = ?', 'site_name = ?', 'subject_id = ?']
-    const values: unknown[] = [subject.study_id, subject.site_name, subject.id]
+    const clauses = ['study_id = ?', 'site_id = ?', 'subject_id = ?']
+    const values: unknown[] = [subject.study_id, subject.site_id, subject.id]
     if (parsed.data.recordId) {
       clauses.push('record_id = ?')
       values.push(parsed.data.recordId)
@@ -300,7 +305,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     if (!(await verifyCsrf(request, reply))) return
     const { auth, subject } = authorization
     if (!(await requireStudyStatus(subject.study_id, ['active'], request, reply))) return
-    if (!(await requireActiveSite(subject.study_id, subject.site_name, request, reply))) return
+    if (!(await requireActiveSite(subject.study_id, subject.site_id, request, reply))) return
     const fieldKey = fieldKeySchema.safeParse((request.params as { fieldKey: string }).fieldKey)
     const query = uploadQuerySchema.safeParse(request.query)
     if (!fieldKey.success || !query.success) {
@@ -313,9 +318,9 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     if (query.data.recordId) {
       const record = sqlite
         .prepare(
-          'SELECT id FROM data_records WHERE study_id = ? AND site_name = ? AND subject_id = ? AND id = ?',
+          'SELECT id FROM data_records WHERE study_id = ? AND site_id = ? AND subject_id = ? AND id = ?',
         )
-        .get(subject.study_id, subject.site_name, subject.id, query.data.recordId)
+        .get(subject.study_id, subject.site_id, subject.id, query.data.recordId)
       if (!record) {
         return reply.code(404).send({
           code: 'RECORD_NOT_FOUND',
@@ -366,7 +371,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
       })
     }
     const id = randomUUID()
-    const relativePath = `${subject.study_id}/${subject.site_name}/${subject.id}/${id}${extension}`
+    const relativePath = `${subject.study_id}/${subject.site_id}/${subject.id}/${id}${extension}`
     const absolutePath = safeStoragePath(config.uploadRoot, relativePath)
     const sha256 = createHash('sha256').update(buffer).digest('hex')
     const now = new Date().toISOString()
@@ -377,14 +382,14 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
         sqlite
           .prepare(
             `INSERT INTO uploaded_files
-             (id, study_id, site_name, subject_id, record_id, field_key, original_name,
+             (id, study_id, site_id, subject_id, record_id, field_key, original_name,
               storage_path, mime_type, size_bytes, sha256, uploaded_by, created_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             id,
             subject.study_id,
-            subject.site_name,
+            subject.site_id,
             subject.id,
             query.data.recordId ?? null,
             fieldKey.data,
@@ -400,7 +405,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
           request,
           actorUserId: auth.user.id,
           studyId: subject.study_id,
-          siteName: subject.site_name,
+          siteId: subject.site_id,
           subjectId: subject.id,
           objectId: id,
           action: 'file.uploaded',
@@ -420,7 +425,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
       publicFile({
         id,
         study_id: subject.study_id,
-        site_name: subject.site_name,
+        site_id: subject.site_id,
         subject_id: subject.id,
         record_id: query.data.recordId ?? null,
         field_key: fieldKey.data,
@@ -450,9 +455,9 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     }
     const row = sqlite
       .prepare(
-        'SELECT * FROM uploaded_files WHERE study_id = ? AND site_name = ? AND subject_id = ? AND id = ?',
+        'SELECT * FROM uploaded_files WHERE study_id = ? AND site_id = ? AND subject_id = ? AND id = ?',
       )
-      .get(subject.study_id, subject.site_name, subject.id, fileId.data) as FileRow | undefined
+      .get(subject.study_id, subject.site_id, subject.id, fileId.data) as FileRow | undefined
     if (!row) {
       return reply
         .code(404)
@@ -479,7 +484,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     if (!(await verifyCsrf(request, reply))) return
     const { auth, subject } = authorization
     if (!(await requireStudyStatus(subject.study_id, ['active'], request, reply))) return
-    if (!(await requireActiveSite(subject.study_id, subject.site_name, request, reply))) return
+    if (!(await requireActiveSite(subject.study_id, subject.site_id, request, reply))) return
     const fileId = z
       .string()
       .uuid()
@@ -491,9 +496,9 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     }
     const row = sqlite
       .prepare(
-        'SELECT * FROM uploaded_files WHERE study_id = ? AND site_name = ? AND subject_id = ? AND id = ?',
+        'SELECT * FROM uploaded_files WHERE study_id = ? AND site_id = ? AND subject_id = ? AND id = ?',
       )
-      .get(subject.study_id, subject.site_name, subject.id, fileId.data) as FileRow | undefined
+      .get(subject.study_id, subject.site_id, subject.id, fileId.data) as FileRow | undefined
     if (!row) {
       return reply
         .code(404)
@@ -512,14 +517,14 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
       sqlite.transaction(() => {
         sqlite
           .prepare(
-            'DELETE FROM uploaded_files WHERE study_id = ? AND site_name = ? AND subject_id = ? AND id = ?',
+            'DELETE FROM uploaded_files WHERE study_id = ? AND site_id = ? AND subject_id = ? AND id = ?',
           )
-          .run(subject.study_id, subject.site_name, subject.id, row.id)
+          .run(subject.study_id, subject.site_id, subject.id, row.id)
         auditInsert({
           request,
           actorUserId: auth.user.id,
           studyId: subject.study_id,
-          siteName: subject.site_name,
+          siteId: subject.site_id,
           subjectId: subject.id,
           objectId: row.id,
           action: 'file.deleted',

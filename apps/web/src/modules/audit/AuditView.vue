@@ -7,6 +7,7 @@ import { useStudyStore } from '@/modules/studies/study.store'
 import { useSiteScopeStore } from '@/modules/studies/site-scope.store'
 
 interface SiteRow {
+  id: string
   name: string
 }
 interface AuditRow {
@@ -43,7 +44,7 @@ const detailOpen = computed({
   },
 })
 const filters = ref({
-  siteName: '',
+  siteId: '',
   actor: '',
   action: '',
   objectType: '',
@@ -73,7 +74,7 @@ function queryString() {
     page: String(filters.value.page),
     pageSize: String(filters.value.pageSize),
   })
-  for (const key of ['siteName', 'actor', 'action', 'objectType'] as const)
+  for (const key of ['siteId', 'actor', 'action', 'objectType'] as const)
     if (filters.value[key]) query.set(key, filters.value[key])
   if (filters.value.dateRange.length === 2) {
     query.set('dateFrom', filters.value.dateRange[0]!)
@@ -110,7 +111,7 @@ function search() {
 }
 function reset() {
   filters.value = {
-    siteName: '',
+    siteId: '',
     actor: '',
     action: '',
     objectType: '',
@@ -134,7 +135,7 @@ async function exportAudit() {
       body: JSON.stringify({
         dataset: 'audit',
         format: 'csv',
-        siteName: filters.value.siteName || null,
+        siteId: filters.value.siteId || null,
         ...(filters.value.dateRange.length === 2
           ? { dateFrom: filters.value.dateRange[0], dateTo: filters.value.dateRange[1] }
           : {}),
@@ -155,16 +156,16 @@ function formatDateTime(value: string) {
 
 watch(() => studyStore.currentStudyId, load)
 watch(
-  () => siteScope.currentSiteName,
+  () => siteScope.currentSiteId,
   (value) => {
-    if (filters.value.siteName !== value) {
-      filters.value.siteName = value
+    if (filters.value.siteId !== value) {
+      filters.value.siteId = value
       void load()
     }
   },
 )
 watch(
-  () => filters.value.siteName,
+  () => filters.value.siteId,
   (value) => siteScope.setCurrent(value),
 )
 onMounted(load)
@@ -183,17 +184,12 @@ onMounted(load)
         <el-form inline @submit.prevent="search">
           <el-form-item :label="t('audit.site')">
             <el-select
-              v-model="filters.siteName"
+              v-model="filters.siteId"
               clearable
               :placeholder="t('audit.allAuthorizedSites')"
               style="width: 190px"
             >
-              <el-option
-                v-for="site in sites"
-                :key="site.name"
-                :label="site.name"
-                :value="site.name"
-              />
+              <el-option v-for="site in sites" :key="site.id" :label="site.name" :value="site.id" />
             </el-select>
           </el-form-item>
           <el-form-item :label="t('audit.actor')">

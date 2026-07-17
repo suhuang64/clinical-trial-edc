@@ -147,8 +147,8 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const query = siteScope.currentSiteName
-      ? `?${new URLSearchParams({ siteName: siteScope.currentSiteName })}`
+    const query = siteScope.currentSiteId
+      ? `?${new URLSearchParams({ siteId: siteScope.currentSiteId })}`
       : ''
     data.value = await apiRequest<DashboardData>(
       `/studies/${studyStore.currentStudyId}/dashboard${query}`,
@@ -168,8 +168,8 @@ async function exportCsv() {
   try {
     const response = await fetch(
       `/api/v1/studies/${studyStore.currentStudyId}/dashboard/export.csv${
-        siteScope.currentSiteName
-          ? `?${new URLSearchParams({ siteName: siteScope.currentSiteName })}`
+        siteScope.currentSiteId
+          ? `?${new URLSearchParams({ siteId: siteScope.currentSiteId })}`
           : ''
       }`,
       {
@@ -194,7 +194,7 @@ async function exportCsv() {
   }
 }
 
-watch([() => studyStore.currentStudyId, () => siteScope.currentSiteName], load, { immediate: true })
+watch([() => studyStore.currentStudyId, () => siteScope.currentSiteId], load, { immediate: true })
 </script>
 
 <template>

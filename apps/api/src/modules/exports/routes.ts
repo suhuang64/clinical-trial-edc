@@ -18,7 +18,7 @@ import { sqlite } from '../../db/database.js'
 const createExportSchema = z.object({
   dataset: z.enum(['subjects', 'clinical_data', 'events', 'audit']),
   format: z.enum(['csv', 'xlsx']).default('csv'),
-  siteName: z.string().trim().min(1).max(200).nullable().optional(),
+  siteId: z.uuid().nullable().optional(),
   dateFrom: z.string().date().optional(),
   dateTo: z.string().date().optional(),
 })
@@ -26,6 +26,7 @@ const createExportSchema = z.object({
 interface ExportJobRow {
   id: string
   study_id: string
+  site_id: string | null
   site_name: string | null
   dataset: string
   format: string
@@ -42,7 +43,7 @@ interface ExportJobRow {
 }
 
 const exportParametersSchema = z.object({
-  siteName: z.string().trim().min(1).max(200).nullable(),
+  siteId: z.uuid().nullable(),
   dateFrom: z.string().date().nullable(),
   dateTo: z.string().date().nullable(),
 })
@@ -60,29 +61,24 @@ function safeExportPath(relativePath: string) {
 
 function scopedSite(
   auth: StudyAuthorization,
-  requestedSiteName: string | null | undefined,
+  requestedSiteId: string | null | undefined,
 ): string | null | undefined {
-  if (auth.allowedSiteNames === null) return requestedSiteName ?? null
-  if (requestedSiteName)
-    return auth.allowedSiteNames.includes(requestedSiteName) ? requestedSiteName : undefined
-  return auth.allowedSiteNames.length === 1 ? auth.allowedSiteNames[0] : undefined
+  if (auth.allowedSiteIds === null) return requestedSiteId ?? null
+  if (requestedSiteId)
+    return auth.allowedSiteIds.includes(requestedSiteId) ? requestedSiteId : undefined
+  return auth.allowedSiteIds.length === 1 ? auth.allowedSiteIds[0] : undefined
 }
 
-function appendScope(
-  clauses: string[],
-  values: unknown[],
-  column: string,
-  siteName: string | null,
-) {
-  if (siteName) {
+function appendScope(clauses: string[], values: unknown[], column: string, siteId: string | null) {
+  if (siteId) {
     clauses.push(`${column} = ?`)
-    values.push(siteName)
+    values.push(siteId)
   }
 }
 
 function exportRows(
   studyId: string,
-  siteName: string | null,
+  siteId: string | null,
   dataset: 'subjects' | 'clinical_data' | 'events' | 'audit',
   dateFrom?: string,
   dateTo?: string,
@@ -90,14 +86,14 @@ function exportRows(
   if (dataset === 'subjects') {
     const clauses = ['s.study_id = ?']
     const values: unknown[] = [studyId]
-    appendScope(clauses, values, 's.site_name', siteName)
+    appendScope(clauses, values, 's.site_id', siteId)
     return sqlite
       .prepare(
         `SELECT st.name AS center_name,
                 s.screening_number, s.subject_number, s.random_number, s.status,
                 s.screening_conclusion, s.screening_failure_reason, s.created_at, s.updated_at
          FROM subjects s
-         JOIN sites st ON st.study_id = s.study_id AND st.name = s.site_name
+         JOIN sites st ON st.study_id = s.study_id AND st.id = s.site_id
          WHERE ${clauses.join(' AND ')}
          ORDER BY st.name, s.screening_number`,
       )
@@ -106,7 +102,7 @@ function exportRows(
   if (dataset === 'clinical_data') {
     const clauses = ['r.study_id = ?']
     const values: unknown[] = [studyId]
-    appendScope(clauses, values, 'r.site_name', siteName)
+    appendScope(clauses, values, 'r.site_id', siteId)
     return sqlite
       .prepare(
         `SELECT st.name AS center_name, s.screening_number, s.subject_number,
@@ -124,7 +120,7 @@ function exportRows(
                 r.updated_at
          FROM data_records r
          JOIN subjects s ON s.study_id = r.study_id AND s.id = r.subject_id
-         JOIN sites st ON st.study_id = r.study_id AND st.name = r.site_name
+         JOIN sites st ON st.study_id = r.study_id AND st.id = r.site_id
          JOIN forms f ON f.study_id = r.study_id AND f.id = r.form_id
          JOIN form_versions fv ON fv.id = r.form_version_id
          LEFT JOIN visit_definitions v ON v.study_id = r.study_id AND v.id = r.visit_id
@@ -137,7 +133,7 @@ function exportRows(
   if (dataset === 'events') {
     const clauses = ['e.study_id = ?']
     const values: unknown[] = [studyId]
-    appendScope(clauses, values, 'e.site_name', siteName)
+    appendScope(clauses, values, 'e.site_id', siteId)
     if (dateFrom) {
       clauses.push('e.occurred_on >= ?')
       values.push(dateFrom)
@@ -153,7 +149,7 @@ function exportRows(
                 e.before_status, e.after_status, u.display_name AS created_by, e.created_at
          FROM subject_events e
          JOIN subjects s ON s.study_id = e.study_id AND s.id = e.subject_id
-         JOIN sites st ON st.study_id = e.study_id AND st.name = e.site_name
+         JOIN sites st ON st.study_id = e.study_id AND st.id = e.site_id
          JOIN users u ON u.id = e.created_by
          WHERE ${clauses.join(' AND ')}
          ORDER BY e.occurred_on, e.created_at`,
@@ -162,7 +158,7 @@ function exportRows(
   }
   const clauses = ['a.study_id = ?']
   const values: unknown[] = [studyId]
-  appendScope(clauses, values, 'a.site_name', siteName)
+  appendScope(clauses, values, 'a.site_id', siteId)
   if (dateFrom) {
     clauses.push('julianday(a.created_at) >= julianday(?)')
     values.push(`${dateFrom}T00:00:00.000Z`)
@@ -175,11 +171,12 @@ function exportRows(
     .prepare(
       `SELECT strftime('%Y-%m-%dT%H:%M:%fZ', a.created_at) AS created_at,
               u.username AS actor_username, u.display_name AS actor_name,
-              st.name AS center_name, a.subject_id, a.action, a.object_type, a.object_id,
+              COALESCE(a.site_name_snapshot, st.name) AS center_name,
+              a.subject_id, a.action, a.object_type, a.object_id,
               a.before_json, a.after_json, a.reason, a.request_id, a.ip_address
        FROM audit_events a
        LEFT JOIN users u ON u.id = a.actor_user_id
-       LEFT JOIN sites st ON st.study_id = a.study_id AND st.name = a.site_name
+       LEFT JOIN sites st ON st.id = a.site_id
        WHERE ${clauses.join(' AND ')}
        ORDER BY julianday(a.created_at)`,
     )
@@ -224,6 +221,7 @@ function publicJob(row: ExportJobRow) {
   return {
     id: row.id,
     studyId: row.study_id,
+    siteId: row.site_id,
     siteName: row.site_name,
     dataset: row.dataset,
     format: row.format,
@@ -242,7 +240,7 @@ async function auditExport(
   request: FastifyRequest,
   auth: StudyAuthorization,
   studyId: string,
-  siteName: string | null,
+  siteId: string | null,
   objectId: string,
   action: string,
   after: unknown,
@@ -251,7 +249,7 @@ async function auditExport(
     requestId: request.id,
     actorUserId: auth.user.id,
     studyId,
-    siteName,
+    siteId,
     objectType: 'export_job',
     objectId,
     action,
@@ -283,7 +281,7 @@ export async function processExportJob(studyId: string, jobId: string) {
     }
     const rows = exportRows(
       job.study_id,
-      job.site_name,
+      job.site_id,
       dataset.data,
       parameters.data.dateFrom ?? undefined,
       parameters.data.dateTo ?? undefined,
@@ -304,7 +302,7 @@ export async function processExportJob(studyId: string, jobId: string) {
       requestId: `export-worker:${job.id}`,
       actorUserId: job.requested_by,
       studyId: job.study_id,
-      siteName: job.site_name,
+      siteId: job.site_id,
       objectType: 'export_job',
       objectId: job.id,
       action: 'export.completed',
@@ -328,7 +326,7 @@ export async function processExportJob(studyId: string, jobId: string) {
       requestId: `export-worker:${job.id}`,
       actorUserId: job.requested_by,
       studyId: job.study_id,
-      siteName: job.site_name,
+      siteId: job.site_id,
       objectType: 'export_job',
       objectId: job.id,
       action: 'export.failed',
@@ -374,15 +372,16 @@ export const exportRoutes: FastifyPluginAsync = async (app) => {
     if (!auth) return
     const clauses = ['j.study_id = ?']
     const values: unknown[] = [studyId]
-    if (auth.allowedSiteNames !== null) {
-      if (!auth.allowedSiteNames.length) return { items: [] }
-      clauses.push(`j.site_name IN (${auth.allowedSiteNames.map(() => '?').join(',')})`)
-      values.push(...auth.allowedSiteNames)
+    if (auth.allowedSiteIds !== null) {
+      if (!auth.allowedSiteIds.length) return { items: [] }
+      clauses.push(`j.site_id IN (${auth.allowedSiteIds.map(() => '?').join(',')})`)
+      values.push(...auth.allowedSiteIds)
     }
     const rows = sqlite
       .prepare(
-        `SELECT j.*, u.display_name AS requested_by_name
+        `SELECT j.*, u.display_name AS requested_by_name, site.name AS site_name
          FROM export_jobs j JOIN users u ON u.id = j.requested_by
+         LEFT JOIN sites site ON site.id = j.site_id
          WHERE ${clauses.join(' AND ')} ORDER BY j.created_at DESC LIMIT 100`,
       )
       .all(...values) as ExportJobRow[]
@@ -407,17 +406,17 @@ export const exportRoutes: FastifyPluginAsync = async (app) => {
       const auditAuth = await requireStudyPermission(request, reply, studyId, 'audit.export')
       if (!auditAuth) return
     }
-    const siteName = scopedSite(auth, parsed.data.siteName)
-    if (siteName === undefined)
+    const siteId = scopedSite(auth, parsed.data.siteId)
+    if (siteId === undefined)
       return reply.code(403).send({
         code: 'SITE_ACCESS_DENIED',
         message: '请选择一个获授权的研究中心后导出',
         requestId: request.id,
       })
-    if (siteName) {
+    if (siteId) {
       const site = sqlite
-        .prepare('SELECT name FROM sites WHERE study_id = ? AND name = ?')
-        .get(studyId, siteName)
+        .prepare('SELECT id FROM sites WHERE study_id = ? AND id = ?')
+        .get(studyId, siteId)
       if (!site)
         return reply
           .code(404)
@@ -426,28 +425,28 @@ export const exportRoutes: FastifyPluginAsync = async (app) => {
     const id = randomUUID()
     const now = new Date().toISOString()
     const parameters = {
-      siteName,
+      siteId,
       dateFrom: parsed.data.dateFrom ?? null,
       dateTo: parsed.data.dateTo ?? null,
     }
     sqlite
       .prepare(
         `INSERT INTO export_jobs
-         (id, study_id, site_name, dataset, format, status, parameters_json, requested_by,
+         (id, study_id, site_id, dataset, format, status, parameters_json, requested_by,
           created_at, started_at)
          VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?, NULL)`,
       )
       .run(
         id,
         studyId,
-        siteName,
+        siteId,
         parsed.data.dataset,
         parsed.data.format,
         JSON.stringify(parameters),
         auth.user.id,
         now,
       )
-    await auditExport(request, auth, studyId, siteName, id, 'export.queued', {
+    await auditExport(request, auth, studyId, siteId, id, 'export.queued', {
       dataset: parsed.data.dataset,
       format: parsed.data.format,
       parameters,
@@ -476,8 +475,8 @@ export const exportRoutes: FastifyPluginAsync = async (app) => {
         .code(404)
         .send({ code: 'EXPORT_NOT_FOUND', message: '导出任务不存在', requestId: request.id })
     if (
-      auth.allowedSiteNames !== null &&
-      (!row.site_name || !auth.allowedSiteNames.includes(row.site_name))
+      auth.allowedSiteIds !== null &&
+      (!row.site_id || !auth.allowedSiteIds.includes(row.site_id))
     )
       return reply.code(403).send({
         code: 'SITE_ACCESS_DENIED',

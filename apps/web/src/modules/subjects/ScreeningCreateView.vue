@@ -11,6 +11,7 @@ import { useStudyStore } from '@/modules/studies/study.store'
 import { useSiteScopeStore } from '@/modules/studies/site-scope.store'
 
 interface SiteRow {
+  id: string
   name: string
   status: string
 }
@@ -40,7 +41,7 @@ const loading = ref(false)
 const saving = ref(false)
 const active = ref(0)
 const sites = ref<SiteRow[]>([])
-const siteName = ref('')
+const siteId = ref('')
 const screeningForm = ref<ScreeningForm | null>(null)
 const values = ref<FormValueMap>({})
 const showErrors = ref(false)
@@ -76,9 +77,9 @@ async function load() {
       apiRequest<{ items: FormRow[] }>(`/studies/${currentStudyId.value}/forms`),
     ])
     sites.value = siteResponse.items.filter((site) => site.status === 'active')
-    if (sites.value.some((site) => site.name === siteScope.currentSiteName))
-      siteName.value = siteScope.currentSiteName
-    else if (sites.value.length === 1) siteName.value = sites.value[0]!.name
+    if (sites.value.some((site) => site.id === siteScope.currentSiteId))
+      siteId.value = siteScope.currentSiteId
+    else if (sites.value.length === 1) siteId.value = sites.value[0]!.id
     const form = formResponse.items.find(
       (item) =>
         item.form_type === 'screening' && item.status === 'published' && item.active_version_number,
@@ -103,7 +104,7 @@ async function load() {
 }
 
 async function createScreeningRecord() {
-  if (!currentStudyId.value || !siteName.value) {
+  if (!currentStudyId.value || !siteId.value) {
     ElMessage.warning(t('screening.siteRequired'))
     return false
   }
@@ -114,7 +115,7 @@ async function createScreeningRecord() {
       screeningNumber: string
     }>(`/studies/${currentStudyId.value}/subjects`, {
       method: 'POST',
-      body: JSON.stringify({ siteName: siteName.value, screeningData: {} }),
+      body: JSON.stringify({ siteId: siteId.value, screeningData: {} }),
     })
     subjectId.value = response.id
     screeningNumber.value = response.screeningNumber
@@ -213,7 +214,7 @@ async function saveDraft() {
   await saveScreeningData(false)
 }
 
-watch(siteName, (value) => {
+watch(siteId, (value) => {
   if (!subjectId.value) siteScope.setCurrent(value)
 })
 onMounted(load)
@@ -245,15 +246,15 @@ onMounted(load)
           <el-form label-position="top">
             <el-form-item :label="t('screening.site')" required>
               <el-select
-                v-model="siteName"
+                v-model="siteId"
                 :placeholder="t('screening.selectSite')"
                 style="width: 100%"
               >
                 <el-option
                   v-for="site in sites"
-                  :key="site.name"
+                  :key="site.id"
                   :label="site.name"
-                  :value="site.name"
+                  :value="site.id"
                 />
               </el-select>
             </el-form-item>
@@ -287,7 +288,7 @@ onMounted(load)
               {{ screeningNumber }}
             </el-descriptions-item>
             <el-descriptions-item :label="t('screening.site')">
-              {{ sites.find((site) => site.name === siteName)?.name }}
+              {{ sites.find((site) => site.id === siteId)?.name }}
             </el-descriptions-item>
             <el-descriptions-item :label="t('screening.form')">
               {{ screeningForm.name }} · v{{ screeningForm.versionNumber }}

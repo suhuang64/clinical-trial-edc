@@ -6,7 +6,7 @@ export interface StudyAuthorization {
   user: AuthenticatedUser
   membershipId: string | null
   roleCode: string | null
-  allowedSiteNames: string[] | null
+  allowedSiteIds: string[] | null
 }
 
 export type StudyStatus = 'draft' | 'active' | 'ended' | 'archived'
@@ -19,8 +19,7 @@ export async function requireStudyPermission(
 ): Promise<StudyAuthorization | null> {
   const user = await requireUser(request, reply)
   if (!user) return null
-  if (user.isSystemAdmin)
-    return { user, membershipId: null, roleCode: null, allowedSiteNames: null }
+  if (user.isSystemAdmin) return { user, membershipId: null, roleCode: null, allowedSiteIds: null }
 
   const membership = await db
     .selectFrom('study_memberships')
@@ -58,15 +57,15 @@ export async function requireStudyPermission(
   }
   const sites = await db
     .selectFrom('membership_sites')
-    .select('site_name')
+    .select('site_id')
     .where('membership_id', '=', membership.id)
     .execute()
   return {
     user,
     membershipId: membership.id,
     roleCode: membership.role_code,
-    allowedSiteNames:
-      membership.role_code === 'study_admin' ? null : sites.map((site) => site.site_name),
+    allowedSiteIds:
+      membership.role_code === 'study_admin' ? null : sites.map((site) => site.site_id),
   }
 }
 
@@ -92,11 +91,11 @@ export async function resolveMembershipPermissions(membershipId: string, roleCod
 
 export async function requireAllowedSite(
   authorization: StudyAuthorization,
-  siteName: string,
+  siteId: string,
   request: FastifyRequest,
   reply: FastifyReply,
 ) {
-  if (authorization.allowedSiteNames === null || authorization.allowedSiteNames.includes(siteName))
+  if (authorization.allowedSiteIds === null || authorization.allowedSiteIds.includes(siteId))
     return true
   await reply
     .code(403)
@@ -137,7 +136,7 @@ export async function requireStudyStatus(
 
 export async function requireActiveSite(
   studyId: string,
-  siteName: string,
+  siteId: string,
   request: FastifyRequest,
   reply: FastifyReply,
 ) {
@@ -145,7 +144,7 @@ export async function requireActiveSite(
     .selectFrom('sites')
     .select('status')
     .where('study_id', '=', studyId)
-    .where('name', '=', siteName)
+    .where('id', '=', siteId)
     .executeTakeFirst()
   if (!site) {
     await reply

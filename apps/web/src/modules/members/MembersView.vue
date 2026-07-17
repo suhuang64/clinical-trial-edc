@@ -23,6 +23,7 @@ interface MemberRow {
   organization: string | null
   role_code: RoleCode
   status: 'active' | 'disabled'
+  site_id: string | null
   site_name: string | null
   manageable: boolean
   overrides: PermissionOverride[]
@@ -38,6 +39,7 @@ interface CandidateRow {
   organization: string | null
 }
 interface SiteRow {
+  id: string
   name: string
 }
 interface PermissionItem {
@@ -68,11 +70,11 @@ const deniedPermissions = ref<string[]>([])
 const addForm = reactive({
   userId: '',
   roleCode: 'investigator' as RoleCode,
-  siteName: '' as string,
+  siteId: '' as string,
 })
 const editForm = reactive({
   roleCode: 'investigator' as RoleCode,
-  siteName: '' as string,
+  siteId: '' as string,
   status: 'active' as 'active' | 'disabled',
 })
 
@@ -127,13 +129,13 @@ watch(
   () => {
     const valid = new Set(editablePermissions.value.map((permission) => permission.code))
     deniedPermissions.value = deniedPermissions.value.filter((code) => valid.has(code))
-    if (editForm.roleCode === 'study_admin') editForm.siteName = ''
+    if (editForm.roleCode === 'study_admin') editForm.siteId = ''
   },
 )
 watch(
   () => addForm.roleCode,
   (role) => {
-    if (role === 'study_admin') addForm.siteName = ''
+    if (role === 'study_admin') addForm.siteId = ''
   },
 )
 
@@ -166,7 +168,7 @@ function openAddDrawer() {
     roleCode: grantableRoleCodes.value.includes('investigator')
       ? 'investigator'
       : grantableRoleCodes.value[0],
-    siteName: studyStore.currentStudy?.siteName ?? '',
+    siteId: studyStore.currentStudy?.siteId ?? '',
   })
   candidateName.value = ''
   candidates.value = []
@@ -195,8 +197,8 @@ async function searchCandidates() {
   }
 }
 
-function validateScope(roleCode: RoleCode, siteName: string) {
-  if (roleCode !== 'study_admin' && !siteName) {
+function validateScope(roleCode: RoleCode, siteId: string) {
+  if (roleCode !== 'study_admin' && !siteId) {
     ElMessage.warning(t('members.siteScopeRequired'))
     return false
   }
@@ -208,7 +210,7 @@ async function addMember() {
     ElMessage.warning(t('members.selectUserRequired'))
     return
   }
-  if (!validateScope(addForm.roleCode, addForm.siteName)) return
+  if (!validateScope(addForm.roleCode, addForm.siteId)) return
   saving.value = true
   try {
     await apiRequest(`/studies/${currentStudyId.value}/members`, {
@@ -216,7 +218,7 @@ async function addMember() {
       body: JSON.stringify({
         userId: addForm.userId,
         roleCode: addForm.roleCode,
-        siteName: addForm.roleCode === 'study_admin' ? null : addForm.siteName,
+        siteId: addForm.roleCode === 'study_admin' ? null : addForm.siteId,
         overrides: [],
       }),
     })
@@ -233,7 +235,7 @@ async function addMember() {
 function openPermissions(member: MemberRow) {
   selectedMember.value = member
   editForm.roleCode = member.role_code
-  editForm.siteName = member.site_name ?? ''
+  editForm.siteId = member.site_id ?? ''
   editForm.status = member.status
   deniedPermissions.value = member.overrides.map((override) => override.permissionCode)
   permissionDrawerOpen.value = true
@@ -241,14 +243,14 @@ function openPermissions(member: MemberRow) {
 
 async function savePermissions() {
   if (!currentStudyId.value || !selectedMember.value) return
-  if (!validateScope(editForm.roleCode, editForm.siteName)) return
+  if (!validateScope(editForm.roleCode, editForm.siteId)) return
   saving.value = true
   try {
     await apiRequest(`/studies/${currentStudyId.value}/members/${selectedMember.value.id}`, {
       method: 'PUT',
       body: JSON.stringify({
         roleCode: editForm.roleCode,
-        siteName: editForm.roleCode === 'study_admin' ? null : editForm.siteName,
+        siteId: editForm.roleCode === 'study_admin' ? null : editForm.siteId,
         status: editForm.status,
         overrides: deniedPermissions.value.map((permissionCode) => ({
           permissionCode,
@@ -284,7 +286,7 @@ async function toggleMember(member: MemberRow) {
   if (!confirmed) return
   selectedMember.value = member
   editForm.roleCode = member.role_code
-  editForm.siteName = member.site_name ?? ''
+  editForm.siteId = member.site_id ?? ''
   editForm.status = nextStatus
   deniedPermissions.value = member.overrides.map((override) => override.permissionCode)
   await savePermissions()
@@ -463,13 +465,8 @@ onMounted(load)
           :label="t('members.siteScope')"
           required
         >
-          <el-select v-model="addForm.siteName" style="width: 100%">
-            <el-option
-              v-for="site in sites"
-              :key="site.name"
-              :label="site.name"
-              :value="site.name"
-            />
+          <el-select v-model="addForm.siteId" style="width: 100%">
+            <el-option v-for="site in sites" :key="site.id" :label="site.name" :value="site.id" />
           </el-select>
         </el-form-item>
       </div>
@@ -514,8 +511,8 @@ onMounted(load)
         :label="t('members.siteScope')"
         required
       >
-        <el-select v-model="editForm.siteName" style="width: 100%">
-          <el-option v-for="site in sites" :key="site.name" :label="site.name" :value="site.name" />
+        <el-select v-model="editForm.siteId" style="width: 100%">
+          <el-option v-for="site in sites" :key="site.id" :label="site.name" :value="site.id" />
         </el-select>
       </el-form-item>
     </el-form>

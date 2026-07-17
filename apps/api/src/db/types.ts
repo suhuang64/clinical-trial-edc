@@ -59,6 +59,7 @@ export interface StudyTable {
 }
 
 export interface SiteTable {
+  id: string
   name: string
   study_id: string
   principal_investigator: string | null
@@ -83,7 +84,7 @@ export interface MembershipTable {
 
 export interface MembershipSiteTable {
   membership_id: string
-  site_name: string
+  site_id: string
 }
 
 export interface RoleTable {
@@ -115,7 +116,8 @@ export interface AuditEventTable {
   request_id: string
   actor_user_id: string | null
   study_id: string | null
-  site_name: string | null
+  site_id: string | null
+  site_name_snapshot: string | null
   subject_id: string | null
   object_type: string
   object_id: string | null
@@ -139,7 +141,7 @@ export interface VisitDefinitionTable {
 export interface UploadedFileTable {
   id: string
   study_id: string
-  site_name: string
+  site_id: string
   subject_id: string
   record_id: string | null
   field_key: string
@@ -155,7 +157,7 @@ export interface UploadedFileTable {
 export interface SubjectEventTable {
   id: string
   study_id: string
-  site_name: string
+  site_id: string
   subject_id: string
   record_id: string | null
   event_type: string
@@ -171,7 +173,7 @@ export interface SubjectEventTable {
 export interface ExportJobTable {
   id: string
   study_id: string
-  site_name: string | null
+  site_id: string | null
   dataset: 'subjects' | 'clinical_data' | 'events' | 'audit'
   format: 'csv' | 'xlsx'
   status: 'queued' | 'running' | 'completed' | 'failed'

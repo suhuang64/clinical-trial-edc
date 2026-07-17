@@ -18,7 +18,6 @@ import { subjectRoutes } from '../modules/subjects/routes.js'
 import { randomizationRoutes } from '../modules/randomization/routes.js'
 import { memberRoutes } from '../modules/members/routes.js'
 import { recordRoutes } from '../modules/records/routes.js'
-import { followupRoutes } from '../modules/followups/routes.js'
 import { fileRoutes, recoverQuarantinedFiles } from '../modules/files/routes.js'
 import { subjectEventRoutes } from '../modules/events/routes.js'
 import { dashboardRoutes } from '../modules/dashboard/routes.js'
@@ -53,7 +52,6 @@ export async function buildApp() {
   await app.register(recordRoutes, {
     prefix: '/api/v1/studies/:studyId/subjects/:subjectId/records',
   })
-  await app.register(followupRoutes, { prefix: '/api/v1/studies/:studyId/followups' })
   await app.register(fileRoutes, {
     prefix: '/api/v1/studies/:studyId/subjects/:subjectId/files',
   })

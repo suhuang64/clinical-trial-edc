@@ -20,7 +20,7 @@ const overrideSchema = z.object({
 const memberSchema = z.object({
   userId: z.uuid(),
   roleCode: roleSchema,
-  siteName: z.string().trim().min(1).max(200).nullable().default(null),
+  siteId: z.uuid().nullable().default(null),
   overrides: z.array(overrideSchema).max(100).default([]),
 })
 const updateMemberSchema = memberSchema
@@ -39,21 +39,21 @@ async function validateGrantScope(
   studyId: string,
   auth: StudyAuth,
   roleCode: RoleCode,
-  siteName: string | null,
+  siteId: string | null,
   overrides: z.infer<typeof overrideSchema>[],
 ) {
   if (!grantableRoleCodes(auth).includes(roleCode))
     throw new Error('不能授予超出当前管理层级的角色')
-  if (roleCode === 'study_admin' && siteName) throw new Error('研究项目管理员不能绑定单个中心')
-  if (roleCode !== 'study_admin' && !siteName) throw new Error('中心级角色必须选择一个中心')
-  if (siteName) {
-    if (auth.allowedSiteNames && !auth.allowedSiteNames.includes(siteName))
+  if (roleCode === 'study_admin' && siteId) throw new Error('研究项目管理员不能绑定单个中心')
+  if (roleCode !== 'study_admin' && !siteId) throw new Error('中心级角色必须选择一个中心')
+  if (siteId) {
+    if (auth.allowedSiteIds && !auth.allowedSiteIds.includes(siteId))
       throw new Error('不能授权当前账号作用域之外的中心')
     const validSite = await db
       .selectFrom('sites')
-      .select('name')
+      .select('id')
       .where('study_id', '=', studyId)
-      .where('name', '=', siteName)
+      .where('id', '=', siteId)
       .where('status', '=', 'active')
       .executeTakeFirst()
     if (!validSite) throw new Error('中心不存在、不属于当前研究或已停用')
@@ -78,15 +78,15 @@ async function validateGrantScope(
   }
 }
 
-async function membershipSiteName(membershipId: string) {
+async function membershipSiteId(membershipId: string) {
   return (
     (
       await db
         .selectFrom('membership_sites')
-        .select('site_name')
+        .select('site_id')
         .where('membership_id', '=', membershipId)
         .executeTakeFirst()
-    )?.site_name ?? null
+    )?.site_id ?? null
   )
 }
 
@@ -102,22 +102,22 @@ async function requireManageableTarget(
   }
   if (!['investigator', 'readonly'].includes(membership.role_code))
     throw new Error('中心管理员只能管理研究者和观察者')
-  const targetSiteName = await membershipSiteName(membership.id)
-  if (!targetSiteName || !auth.allowedSiteNames?.includes(targetSiteName))
+  const targetSiteId = await membershipSiteId(membership.id)
+  if (!targetSiteId || !auth.allowedSiteIds?.includes(targetSiteId))
     throw new Error('不能管理其他中心的成员')
 }
 
 function isManageableTarget(
   auth: StudyAuth,
-  membership: { user_id: string; role_code: string; site_name: string | null },
+  membership: { user_id: string; role_code: string; site_id: string | null },
 ) {
   if (auth.user.isSystemAdmin) return true
   if (membership.user_id === auth.user.id) return false
   if (auth.roleCode === 'study_admin') return membership.role_code !== 'study_admin'
   return (
     ['investigator', 'readonly'].includes(membership.role_code) &&
-    Boolean(membership.site_name) &&
-    Boolean(auth.allowedSiteNames?.includes(membership.site_name!))
+    Boolean(membership.site_id) &&
+    Boolean(auth.allowedSiteIds?.includes(membership.site_id!))
   )
 }
 
@@ -200,6 +200,7 @@ export const memberRoutes: FastifyPluginAsync = async (app) => {
       .selectFrom('study_memberships as m')
       .innerJoin('users as u', 'u.id', 'm.user_id')
       .leftJoin('membership_sites as ms', 'ms.membership_id', 'm.id')
+      .leftJoin('sites as site', 'site.id', 'ms.site_id')
       .select([
         'm.id',
         'm.user_id',
@@ -213,16 +214,17 @@ export const memberRoutes: FastifyPluginAsync = async (app) => {
         'u.email',
         'u.organization',
         'u.status as user_status',
-        'ms.site_name',
+        'ms.site_id',
+        'site.name as site_name',
       ])
       .where('m.study_id', '=', studyId)
       .orderBy('u.display_name')
       .execute()
     const scoped = memberships.filter((membership) => {
-      if (auth.allowedSiteNames === null) return true
+      if (auth.allowedSiteIds === null) return true
       return (
         membership.role_code === 'study_admin' ||
-        (Boolean(membership.site_name) && auth.allowedSiteNames.includes(membership.site_name!))
+        (Boolean(membership.site_id) && auth.allowedSiteIds.includes(membership.site_id!))
       )
     })
     const items = await Promise.all(
@@ -264,7 +266,7 @@ export const memberRoutes: FastifyPluginAsync = async (app) => {
         studyId,
         auth,
         parsed.data.roleCode,
-        parsed.data.siteName,
+        parsed.data.siteId,
         parsed.data.overrides,
       )
     } catch (error) {
@@ -314,10 +316,10 @@ export const memberRoutes: FastifyPluginAsync = async (app) => {
           updated_at: now,
         })
         .execute()
-      if (parsed.data.siteName)
+      if (parsed.data.siteId)
         await trx
           .insertInto('membership_sites')
-          .values({ membership_id: membershipId, site_name: parsed.data.siteName })
+          .values({ membership_id: membershipId, site_id: parsed.data.siteId })
           .execute()
       if (parsed.data.overrides.length)
         await trx
@@ -335,7 +337,7 @@ export const memberRoutes: FastifyPluginAsync = async (app) => {
       requestId: request.id,
       actorUserId: auth.user.id,
       studyId,
-      siteName: parsed.data.siteName,
+      siteId: parsed.data.siteId,
       objectType: 'study_membership',
       objectId: membershipId,
       action: 'member.created',
@@ -373,7 +375,7 @@ export const memberRoutes: FastifyPluginAsync = async (app) => {
         studyId,
         auth,
         parsed.data.roleCode,
-        parsed.data.siteName,
+        parsed.data.siteId,
         parsed.data.overrides,
       )
     } catch (error) {
@@ -402,7 +404,7 @@ export const memberRoutes: FastifyPluginAsync = async (app) => {
           requestId: request.id,
         })
     }
-    const beforeSiteName = await membershipSiteName(membershipId)
+    const beforeSiteId = await membershipSiteId(membershipId)
     const now = new Date().toISOString()
     await db.transaction().execute(async (trx) => {
       await trx
@@ -415,10 +417,10 @@ export const memberRoutes: FastifyPluginAsync = async (app) => {
         .deleteFrom('membership_permission_overrides')
         .where('membership_id', '=', membershipId)
         .execute()
-      if (parsed.data.siteName)
+      if (parsed.data.siteId)
         await trx
           .insertInto('membership_sites')
-          .values({ membership_id: membershipId, site_name: parsed.data.siteName })
+          .values({ membership_id: membershipId, site_id: parsed.data.siteId })
           .execute()
       if (parsed.data.overrides.length)
         await trx
@@ -436,14 +438,14 @@ export const memberRoutes: FastifyPluginAsync = async (app) => {
       requestId: request.id,
       actorUserId: auth.user.id,
       studyId,
-      siteName: parsed.data.siteName ?? beforeSiteName,
+      siteId: parsed.data.siteId ?? beforeSiteId,
       objectType: 'study_membership',
       objectId: membershipId,
       action: 'member.updated',
       before: {
         roleCode: membership.role_code,
         status: membership.status,
-        siteName: beforeSiteName,
+        siteId: beforeSiteId,
       },
       after: parsed.data,
       ipAddress: request.ip,

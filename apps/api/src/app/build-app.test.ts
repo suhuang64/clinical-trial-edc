@@ -306,12 +306,13 @@ describe('API 基础能力', () => {
       payload: { name: '测试中心', enrollmentTarget: 100 },
     })
     expect(siteResponse.statusCode).toBe(201)
+    const siteId = siteResponse.json().id as string
     let siteName = siteResponse.json().name as string
     const writeBeforeStart = await app!.inject({
       method: 'POST',
       url: `/api/v1/studies/${studyId}/subjects`,
       headers,
-      payload: { siteName, screeningData: {} },
+      payload: { siteId, screeningData: {} },
     })
     expect(writeBeforeStart.statusCode).toBe(409)
     expect(writeBeforeStart.json().code).toBe('STUDY_NOT_ACTIVE')
@@ -327,7 +328,7 @@ describe('API 基础能力', () => {
     ).toBe(200)
     const updateSite = await app!.inject({
       method: 'PUT',
-      url: `/api/v1/studies/${studyId}/sites/${siteName}`,
+      url: `/api/v1/studies/${studyId}/sites/${siteId}`,
       headers,
       payload: {
         name: '测试中心（更新）',
@@ -374,7 +375,7 @@ describe('API 基础能力', () => {
       method: 'POST',
       url: `/api/v1/studies/${studyId}/subjects`,
       headers,
-      payload: { siteName, screeningData: { diagnosis: '测试诊断' } },
+      payload: { siteId, screeningData: { diagnosis: '测试诊断' } },
     })
     expect(subjectResponse.statusCode).toBe(201)
     expect(subjectResponse.json().screeningNumber).toBe('PRE-00001')
@@ -634,12 +635,13 @@ describe('API 基础能力', () => {
       headers,
       payload: { name: '第二测试中心', enrollmentTarget: 50 },
     })
+    const secondSiteId = secondSiteResponse.json().id as string
     const secondSiteName = secondSiteResponse.json().name as string
     const secondSubjectResponse = await app!.inject({
       method: 'POST',
       url: `/api/v1/studies/${studyId}/subjects`,
       headers,
-      payload: { siteName: secondSiteName, screeningData: { diagnosis: '第二中心病例' } },
+      payload: { siteId: secondSiteId, screeningData: { diagnosis: '第二中心病例' } },
     })
     expect(secondSubjectResponse.statusCode).toBe(201)
     const secondSubjectId = secondSubjectResponse.json().id as string
@@ -660,7 +662,7 @@ describe('API 基础能力', () => {
       method: 'POST',
       url: `/api/v1/studies/${studyId}/subjects`,
       headers,
-      payload: { siteName: secondSiteName, screeningData: { diagnosis: '并发随机化测试' } },
+      payload: { siteId: secondSiteId, screeningData: { diagnosis: '并发随机化测试' } },
     })
     const concurrentSubjectId = concurrentSubjectResponse.json().id as string
     await app!.inject({
@@ -741,7 +743,7 @@ describe('API 基础能力', () => {
       payload: {
         userId: investigatorUserId,
         roleCode: 'investigator',
-        siteName,
+        siteId,
         overrides: [],
       },
     })
@@ -791,7 +793,7 @@ describe('API 基础能力', () => {
       payload: {
         userId: projectAdminUserId,
         roleCode: 'study_admin',
-        siteName: null,
+        siteId: null,
         overrides: [],
       },
     })
@@ -821,7 +823,7 @@ describe('API 基础能力', () => {
       payload: {
         userId: sameNameUserId,
         roleCode: 'study_admin',
-        siteName: null,
+        siteId: null,
         overrides: [],
       },
     })
@@ -834,7 +836,7 @@ describe('API 基础能力', () => {
       headers,
       payload: {
         roleCode: 'investigator',
-        siteName,
+        siteId,
         status: 'active',
         overrides: [{ permissionCode: 'subject.edit', effect: 'deny' }],
       },
@@ -877,7 +879,7 @@ describe('API 基础能力', () => {
       headers,
       payload: { name: '隔离中心' },
     })
-    const isolationSiteName = isolationSiteResponse.json().name as string
+    const isolationSiteId = isolationSiteResponse.json().id as string
     const deniedOtherStudy = await app!.inject({
       method: 'GET',
       url: `/api/v1/studies/${isolationStudyId}/subjects`,
@@ -896,7 +898,7 @@ describe('API 基础能力', () => {
       method: 'POST',
       url: `/api/v1/studies/${studyId}/subjects`,
       headers,
-      payload: { siteName: isolationSiteName, screeningData: {} },
+      payload: { siteId: isolationSiteId, screeningData: {} },
     })
     expect(crossStudySiteReference.statusCode).toBe(404)
     expect(crossStudySiteReference.json().code).toBe('SITE_NOT_FOUND')
@@ -928,14 +930,6 @@ describe('API 基础能力', () => {
     expect(explicitlyDeniedEvent.statusCode).toBe(403)
     expect(explicitlyDeniedEvent.json().code).toBe('PERMISSION_DENIED')
 
-    const scopedFollowups = await app!.inject({
-      method: 'GET',
-      url: `/api/v1/studies/${studyId}/followups`,
-      headers: investigatorHeaders,
-    })
-    expect(scopedFollowups.statusCode).toBe(200)
-    expect(scopedFollowups.json().items).toHaveLength(1)
-    expect(scopedFollowups.json().items[0].site_name).toBe(siteName)
     const scopedDashboard = await app!.inject({
       method: 'GET',
       url: `/api/v1/studies/${studyId}/dashboard`,
@@ -958,7 +952,7 @@ describe('API 基础能力', () => {
     ])
     const selectedSiteDashboard = await app!.inject({
       method: 'GET',
-      url: `/api/v1/studies/${studyId}/dashboard?siteName=${secondSiteName}`,
+      url: `/api/v1/studies/${studyId}/dashboard?siteId=${secondSiteId}`,
       headers,
     })
     expect(selectedSiteDashboard.statusCode).toBe(200)
@@ -967,7 +961,7 @@ describe('API 基础能力', () => {
     ])
     const deniedSelectedSiteDashboard = await app!.inject({
       method: 'GET',
-      url: `/api/v1/studies/${studyId}/dashboard?siteName=${secondSiteName}`,
+      url: `/api/v1/studies/${studyId}/dashboard?siteId=${secondSiteId}`,
       headers: investigatorHeaders,
     })
     expect(deniedSelectedSiteDashboard.statusCode).toBe(403)
@@ -1003,7 +997,7 @@ describe('API 基础能力', () => {
       method: 'POST',
       url: `/api/v1/studies/${studyId}/subjects`,
       headers: investigatorHeaders,
-      payload: { siteName: secondSiteName, screeningData: { diagnosis: '越权病例' } },
+      payload: { siteId: secondSiteId, screeningData: { diagnosis: '越权病例' } },
     })
     expect(crossSiteWrite.statusCode).toBe(403)
     expect(crossSiteWrite.json().code).toBe('SITE_ACCESS_DENIED')
@@ -1018,7 +1012,7 @@ describe('API 基础能力', () => {
       method: 'POST',
       url: `/api/v1/studies/${studyId}/exports`,
       headers: investigatorHeaders,
-      payload: { dataset: 'subjects', format: 'csv', siteName },
+      payload: { dataset: 'subjects', format: 'csv', siteId },
     })
     expect(deniedExport.statusCode).toBe(403)
     expect(deniedExport.json().code).toBe('PERMISSION_DENIED')
@@ -1035,7 +1029,7 @@ describe('API 基础能力', () => {
       payload: {
         userId: siteAdminUserId,
         roleCode: 'site_admin',
-        siteName,
+        siteId,
         overrides: [],
       },
     })
@@ -1096,7 +1090,7 @@ describe('API 基础能力', () => {
       payload: {
         userId: observerCandidateId,
         roleCode: 'readonly',
-        siteName,
+        siteId,
         overrides: [],
       },
     })
@@ -1134,7 +1128,7 @@ describe('API 基础能力', () => {
       payload: {
         userId: forbiddenAdminCandidateId,
         roleCode: 'site_admin',
-        siteName,
+        siteId,
         overrides: [],
       },
     })
@@ -1151,7 +1145,7 @@ describe('API 基础能力', () => {
       method: 'POST',
       url: `/api/v1/studies/${studyId}/exports`,
       headers: siteAdminHeaders,
-      payload: { dataset: 'subjects', format: 'csv', siteName },
+      payload: { dataset: 'subjects', format: 'csv', siteId },
     })
     expect(forbiddenSiteExport.statusCode).toBe(403)
     const makeReadonly = await app!.inject({
@@ -1160,7 +1154,7 @@ describe('API 基础能力', () => {
       headers,
       payload: {
         roleCode: 'readonly',
-        siteName,
+        siteId,
         overrides: [],
         status: 'active',
       },
@@ -1305,12 +1299,12 @@ describe('API 基础能力', () => {
       headers,
       payload: { name: '表单测试中心', enrollmentTarget: 10 },
     })
-    const siteName = siteResponse.json().name as string
+    const siteId = siteResponse.json().id as string
     const subjectResponse = await app!.inject({
       method: 'POST',
       url: `/api/v1/studies/${studyId}/subjects`,
       headers,
-      payload: { siteName, screeningData: {} },
+      payload: { siteId, screeningData: {} },
     })
     const subjectId = subjectResponse.json().id as string
     const updateScreening = await app!.inject({
@@ -1860,20 +1854,6 @@ describe('API 基础能力', () => {
       repeatedRecordIds.push(repeated.json().id as string)
     }
 
-    const followupWorklist = await app!.inject({
-      method: 'GET',
-      url: `/api/v1/studies/${studyId}/followups`,
-      headers,
-    })
-    expect(followupWorklist.statusCode).toBe(200)
-    const followupSubject = followupWorklist
-      .json()
-      .items.find((item: { id: string }) => item.id === subjectId)
-    expect(followupSubject.overall).toMatchObject({
-      expectedCount: 2,
-      submittedCount: 2,
-      status: 'completed',
-    })
     const subjectListWithCompletion = await app!.inject({
       method: 'GET',
       url: `/api/v1/studies/${studyId}/subjects`,
@@ -1884,17 +1864,6 @@ describe('API 基础能力', () => {
       subjectListWithCompletion.json().items.find((item: { id: string }) => item.id === subjectId)
         ?.completion,
     ).toMatchObject({ expectedCount: 2, submittedCount: 2, draftCount: 0 })
-    expect(followupWorklist.json().items).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: subjectId,
-          visits: expect.arrayContaining([
-            expect.objectContaining({ id: visitId, status: 'completed' }),
-          ]),
-        }),
-      ]),
-    )
-
     const adverseEvent = await app!.inject({
       method: 'POST',
       url: `/api/v1/studies/${studyId}/subjects/${subjectId}/events`,
@@ -1980,7 +1949,7 @@ describe('API 基础能力', () => {
       method: 'POST',
       url: `/api/v1/studies/${studyId}/exports`,
       headers,
-      payload: { dataset: 'subjects', format: 'csv', siteName },
+      payload: { dataset: 'subjects', format: 'csv', siteId },
     })
     expect(subjectExport.statusCode).toBe(201)
     expect(subjectExport.json()).toMatchObject({ status: 'queued', rowCount: null })
@@ -2012,7 +1981,7 @@ describe('API 基础能力', () => {
       method: 'POST',
       url: `/api/v1/studies/${studyId}/exports`,
       headers,
-      payload: { dataset: 'subjects', format: 'xlsx', siteName },
+      payload: { dataset: 'subjects', format: 'xlsx', siteId },
     })
     expect(subjectExcelExport.statusCode).toBe(201)
     expect(subjectExcelExport.json()).toMatchObject({ status: 'queued', rowCount: null })
@@ -2050,7 +2019,7 @@ describe('API 基础能力', () => {
       method: 'POST',
       url: `/api/v1/studies/${studyId}/exports`,
       headers,
-      payload: { dataset: 'audit', format: 'csv', siteName },
+      payload: { dataset: 'audit', format: 'csv', siteId },
     })
     expect(auditExport.statusCode).toBe(201)
     expect((await waitForExport(studyId, auditExport.json().id, headers)).rowCount).toBeGreaterThan(
@@ -2166,7 +2135,7 @@ describe('API 基础能力', () => {
       payload: {
         userId: lifecycleUserId,
         roleCode: 'readonly',
-        siteName,
+        siteId,
         overrides: [],
       },
     })
@@ -2175,7 +2144,7 @@ describe('API 基础能力', () => {
 
     const disableSite = await app!.inject({
       method: 'POST',
-      url: `/api/v1/studies/${studyId}/sites/${siteName}/status`,
+      url: `/api/v1/studies/${studyId}/sites/${siteId}/status`,
       headers,
       payload: { status: 'disabled' },
     })
@@ -2184,7 +2153,7 @@ describe('API 基础能力', () => {
       method: 'POST',
       url: `/api/v1/studies/${studyId}/subjects`,
       headers,
-      payload: { siteName, screeningData: {} },
+      payload: { siteId, screeningData: {} },
     })
     expect(screeningAtDisabledSite.statusCode).toBe(409)
     expect(screeningAtDisabledSite.json().code).toBe('SITE_DISABLED')
@@ -2212,7 +2181,7 @@ describe('API 基础能力', () => {
       (
         await app!.inject({
           method: 'POST',
-          url: `/api/v1/studies/${studyId}/sites/${siteName}/status`,
+          url: `/api/v1/studies/${studyId}/sites/${siteId}/status`,
           headers,
           payload: { status: 'active' },
         })
@@ -2230,7 +2199,7 @@ describe('API 基础能力', () => {
       method: 'POST',
       url: `/api/v1/studies/${studyId}/subjects`,
       headers,
-      payload: { siteName, screeningData: {} },
+      payload: { siteId, screeningData: {} },
     })
     expect(writeAfterEnd.statusCode).toBe(409)
     expect(writeAfterEnd.json().code).toBe('STUDY_READ_ONLY')
@@ -2241,7 +2210,7 @@ describe('API 基础能力', () => {
         payload: {
           userId: lifecycleUserId,
           roleCode: 'readonly',
-          siteName,
+          siteId,
           overrides: [],
         },
       },
@@ -2250,7 +2219,7 @@ describe('API 基础能力', () => {
         url: `/api/v1/studies/${studyId}/members/${lifecycleMembershipId}`,
         payload: {
           roleCode: 'readonly',
-          siteName,
+          siteId,
           overrides: [],
           status: 'active',
         },
@@ -2354,7 +2323,7 @@ describe('API 基础能力', () => {
       payload: { name: '性能测试中心' },
     })
     expect(siteResponse.statusCode).toBe(201)
-    const siteName = siteResponse.json().name as string
+    const siteId = siteResponse.json().id as string
     const user = sqlite
       .prepare("SELECT id FROM users WHERE username = 'integration-admin'")
       .get() as { id: string }
@@ -2363,7 +2332,7 @@ describe('API 基础能力', () => {
     sqlite.transaction(() => {
       const insert = sqlite.prepare(
         `INSERT INTO subjects
-         (id, study_id, site_name, screening_number, subject_number, status,
+         (id, study_id, site_id, screening_number, subject_number, status,
           screening_data_json, row_version, created_by, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, 'enrolled', '{}', 1, ?, ?, ?)`,
       )
@@ -2371,7 +2340,7 @@ describe('API 基础能力', () => {
         const id = randomUUID()
         subjectIds.push(id)
         const number = String(index).padStart(4, '0')
-        insert.run(id, studyId, siteName, `PERF-S-${number}`, `PERF-P-${number}`, user.id, now, now)
+        insert.run(id, studyId, siteId, `PERF-S-${number}`, `PERF-P-${number}`, user.id, now, now)
       }
     })()
 
@@ -2380,7 +2349,7 @@ describe('API 基础能力', () => {
       method: 'POST',
       url: `/api/v1/studies/${studyId}/exports`,
       headers,
-      payload: { dataset: 'subjects', format: 'csv', siteName },
+      payload: { dataset: 'subjects', format: 'csv', siteId },
     })
     const exportAcceptedInMs = performance.now() - exportStartedAt
     expect(exportResponse.statusCode).toBe(201)
@@ -2425,7 +2394,7 @@ describe('API 基础能力', () => {
     sqlite.transaction(() => {
       const insert = sqlite.prepare(
         `INSERT INTO data_records
-         (id, study_id, site_name, subject_id, form_id, form_version_id, visit_id,
+         (id, study_id, site_id, subject_id, form_id, form_version_id, visit_id,
           repeat_index, status, row_version, created_by, updated_by, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, NULL, 1, 'submitted', 1, ?, ?, ?, ?)`,
       )
@@ -2433,7 +2402,7 @@ describe('API 基础能力', () => {
         insert.run(
           randomUUID(),
           studyId,
-          siteName,
+          siteId,
           subjectId,
           formId,
           activeVersion.id,

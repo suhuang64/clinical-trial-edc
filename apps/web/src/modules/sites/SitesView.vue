@@ -8,6 +8,7 @@ import { useStudyStore } from '@/modules/studies/study.store'
 import StatusPill from '@/components/ui/StatusPill.vue'
 
 interface SiteRow {
+  id: string
   name: string
   principal_investigator: string | null
   contact_name: string | null
@@ -34,7 +35,7 @@ const visits = ref<VisitRow[]>([])
 const siteDialogOpen = ref(false)
 const visitDialogOpen = ref(false)
 const saving = ref(false)
-const editingSiteName = ref('')
+const editingSiteId = ref('')
 const editingVisitId = ref('')
 const siteFormRef = ref<FormInstance>()
 const visitFormRef = ref<FormInstance>()
@@ -76,7 +77,7 @@ async function load() {
 }
 
 function resetSiteForm() {
-  editingSiteName.value = ''
+  editingSiteId.value = ''
   Object.assign(siteForm, {
     name: '',
     principalInvestigator: '',
@@ -94,7 +95,7 @@ function openCreateSite() {
 }
 
 function openEditSite(site: SiteRow) {
-  editingSiteName.value = site.name
+  editingSiteId.value = site.id
   Object.assign(siteForm, {
     name: site.name,
     principalInvestigator: site.principal_investigator ?? '',
@@ -117,14 +118,14 @@ async function saveSite() {
       contactPhone: siteForm.contactPhone.trim() || null,
       contactEmail: siteForm.contactEmail.trim() || null,
     }
-    const path = editingSiteName.value
-      ? `/studies/${currentStudyId.value}/sites/${encodeURIComponent(editingSiteName.value)}`
+    const path = editingSiteId.value
+      ? `/studies/${currentStudyId.value}/sites/${editingSiteId.value}`
       : `/studies/${currentStudyId.value}/sites`
     await apiRequest(path, {
-      method: editingSiteName.value ? 'PUT' : 'POST',
+      method: editingSiteId.value ? 'PUT' : 'POST',
       body: JSON.stringify(payload),
     })
-    ElMessage.success(editingSiteName.value ? t('sites.siteUpdated') : t('sites.siteCreated'))
+    ElMessage.success(editingSiteId.value ? t('sites.siteUpdated') : t('sites.siteCreated'))
     siteDialogOpen.value = false
     await load()
   } catch (error) {
@@ -149,13 +150,10 @@ async function toggleSite(site: SiteRow) {
   ).catch(() => null)
   if (!confirmed) return
   try {
-    await apiRequest(
-      `/studies/${currentStudyId.value}/sites/${encodeURIComponent(site.name)}/status`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ status }),
-      },
-    )
+    await apiRequest(`/studies/${currentStudyId.value}/sites/${site.id}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ status }),
+    })
     ElMessage.success(t('sites.statusChanged', { action: verb }))
     await load()
   } catch (error) {
@@ -249,7 +247,7 @@ onMounted(load)
           </el-button>
         </div>
         <section v-loading="loading" class="site-grid">
-          <article v-for="site in sites" :key="site.name" class="panel site-card">
+          <article v-for="site in sites" :key="site.id" class="panel site-card">
             <header>
               <div>
                 <h2>{{ site.name }}</h2>
@@ -329,7 +327,7 @@ onMounted(load)
 
     <el-dialog
       v-model="siteDialogOpen"
-      :title="editingSiteName ? t('sites.editSite') : t('sites.addSite')"
+      :title="editingSiteId ? t('sites.editSite') : t('sites.addSite')"
       width="min(680px, calc(100vw - 32px))"
       :close-on-click-modal="false"
       @closed="resetSiteForm"

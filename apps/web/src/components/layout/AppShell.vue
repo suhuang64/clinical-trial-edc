@@ -87,7 +87,7 @@ const visibleMobileNavigation = computed(() =>
 
 const activeNav = computed(() => String(route.meta.nav ?? 'dashboard'))
 const pageTitle = computed(() => t(String(route.meta.titleKey ?? 'common.appName')))
-const selectedSiteName = computed(() => siteScope.currentSiteName || allSitesOptionValue)
+const selectedSiteId = computed(() => siteScope.currentSiteId || allSitesOptionValue)
 
 async function savePreferences(locale = preferences.locale, theme = preferences.theme) {
   try {
@@ -204,7 +204,7 @@ onMounted(() => studies.load())
           <el-select
             v-if="studies.currentStudyId"
             class="site-select"
-            :model-value="selectedSiteName"
+            :model-value="selectedSiteId"
             :loading="siteScope.loading"
             :aria-label="t('common.switchSite')"
             @update:model-value="changeSite"
@@ -212,9 +212,9 @@ onMounted(() => studies.load())
             <el-option :label="t('common.allSites')" :value="allSitesOptionValue" />
             <el-option
               v-for="site in siteScope.sites"
-              :key="site.name"
+              :key="site.id"
               :label="site.name"
-              :value="site.name"
+              :value="site.id"
             />
           </el-select>
           <button v-else class="study-switcher" type="button" @click="router.push('/studies')">

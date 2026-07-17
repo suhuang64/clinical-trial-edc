@@ -16,6 +16,7 @@ export interface StudySummary {
   notes: string | null
   canManage: boolean
   roleCode: 'study_admin' | 'site_admin' | 'investigator' | 'readonly' | null
+  siteId: string | null
   siteName: string | null
   permissions: string[]
 }
@@ -46,6 +47,7 @@ interface StudyApiRow {
   notes: string | null
   can_manage: boolean
   role_code: StudySummary['roleCode']
+  site_id: string | null
   site_name: string | null
   permissions: string[]
 }
@@ -80,6 +82,7 @@ export const useStudyStore = defineStore('studies', () => {
         notes: row.notes,
         canManage: row.can_manage,
         roleCode: row.role_code,
+        siteId: row.site_id,
         siteName: row.site_name,
         permissions: row.permissions,
       }))

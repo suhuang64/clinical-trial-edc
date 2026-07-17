@@ -118,9 +118,10 @@ export async function processFormMigrationJob(studyId: string, jobId: string) {
   const items = sqlite
     .prepare(
       `SELECT i.id, i.record_id, i.from_version_id, i.to_version_id,
-              r.site_name, r.subject_id
+              r.site_id, site.name AS site_name, r.subject_id
        FROM form_migration_items i
        JOIN data_records r ON r.study_id = ? AND r.id = i.record_id
+       JOIN sites site ON site.id = r.site_id
        WHERE i.job_id = ? AND i.status = 'pending'
        ORDER BY i.id`,
     )
@@ -129,6 +130,7 @@ export async function processFormMigrationJob(studyId: string, jobId: string) {
     record_id: string
     from_version_id: string
     to_version_id: string
+    site_id: string
     site_name: string
     subject_id: string
   }>
@@ -169,10 +171,10 @@ export async function processFormMigrationJob(studyId: string, jobId: string) {
         sqlite
           .prepare(
             `INSERT INTO audit_events
-             (id, request_id, actor_user_id, study_id, site_name, subject_id,
+             (id, request_id, actor_user_id, study_id, site_id, site_name_snapshot, subject_id,
               object_type, object_id, action, before_json, after_json, reason,
               ip_address, user_agent, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, 'data_record', ?, 'form.record_migrated',
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'data_record', ?, 'form.record_migrated',
                      ?, ?, NULL, ?, ?, ?)`,
           )
           .run(
@@ -180,6 +182,7 @@ export async function processFormMigrationJob(studyId: string, jobId: string) {
             job.request_id ?? `migration-recovery:${jobId}`,
             job.created_by,
             job.study_id,
+            item.site_id,
             item.site_name,
             item.subject_id,
             item.record_id,
@@ -226,10 +229,10 @@ export async function processFormMigrationJob(studyId: string, jobId: string) {
       sqlite
         .prepare(
           `INSERT INTO audit_events
-           (id, request_id, actor_user_id, study_id, site_name, subject_id,
+           (id, request_id, actor_user_id, study_id, site_id, site_name_snapshot, subject_id,
             object_type, object_id, action, before_json, after_json, reason,
             ip_address, user_agent, created_at)
-           VALUES (?, ?, ?, ?, NULL, NULL, 'form_version', ?, 'form.published',
+           VALUES (?, ?, ?, ?, NULL, NULL, NULL, 'form_version', ?, 'form.published',
                    NULL, ?, NULL, ?, ?, ?)`,
         )
         .run(
@@ -260,10 +263,10 @@ export async function processFormMigrationJob(studyId: string, jobId: string) {
       sqlite
         .prepare(
           `INSERT INTO audit_events
-           (id, request_id, actor_user_id, study_id, site_name, subject_id,
+           (id, request_id, actor_user_id, study_id, site_id, site_name_snapshot, subject_id,
             object_type, object_id, action, before_json, after_json, reason,
             ip_address, user_agent, created_at)
-           VALUES (?, ?, ?, ?, NULL, NULL, 'form_migration_job', ?, 'form.migration_failed',
+           VALUES (?, ?, ?, ?, NULL, NULL, NULL, 'form_migration_job', ?, 'form.migration_failed',
                    NULL, ?, NULL, ?, ?, ?)`,
         )
         .run(
@@ -1191,10 +1194,8 @@ export const formRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const records = sqlite
-      .prepare(
-        'SELECT id, form_version_id, site_name FROM data_records WHERE study_id = ? AND form_id = ?',
-      )
-      .all(studyId, formId) as Array<{ id: string; form_version_id: string; site_name: string }>
+      .prepare('SELECT id, form_version_id FROM data_records WHERE study_id = ? AND form_id = ?')
+      .all(studyId, formId) as Array<{ id: string; form_version_id: string }>
     const jobId = randomUUID()
     const now = new Date().toISOString()
     sqlite.transaction(() => {

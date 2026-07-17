@@ -5,7 +5,7 @@ export interface AuditInput {
   requestId: string
   actorUserId?: string | null | undefined
   studyId?: string | null | undefined
-  siteName?: string | null | undefined
+  siteId?: string | null | undefined
   subjectId?: string | null | undefined
   objectType: string
   objectId?: string | null | undefined
@@ -25,6 +25,9 @@ function safeJson(value: unknown) {
 }
 
 export async function writeAudit(input: AuditInput) {
+  const site = input.siteId
+    ? await db.selectFrom('sites').select('name').where('id', '=', input.siteId).executeTakeFirst()
+    : null
   await db
     .insertInto('audit_events')
     .values({
@@ -32,7 +35,8 @@ export async function writeAudit(input: AuditInput) {
       request_id: input.requestId,
       actor_user_id: input.actorUserId ?? null,
       study_id: input.studyId ?? null,
-      site_name: input.siteName ?? null,
+      site_id: input.siteId ?? null,
+      site_name_snapshot: site?.name ?? null,
       subject_id: input.subjectId ?? null,
       object_type: input.objectType,
       object_id: input.objectId ?? null,

@@ -29,6 +29,7 @@ interface SubjectRow {
 }
 
 interface SiteRow {
+  id: string
   name: string
 }
 
@@ -39,7 +40,7 @@ const siteScope = useSiteScopeStore()
 const { width } = useViewport()
 const query = ref('')
 const status = ref('')
-const siteName = ref('')
+const siteId = ref('')
 const subjects = ref<SubjectRow[]>([])
 const sites = ref<SiteRow[]>([])
 const total = ref(0)
@@ -72,7 +73,7 @@ async function load() {
     const params = new URLSearchParams({ pageSize: '100' })
     if (query.value.trim()) params.set('query', query.value.trim())
     if (status.value) params.set('status', status.value)
-    if (siteName.value) params.set('siteName', siteName.value)
+    if (siteId.value) params.set('siteId', siteId.value)
     const [subjectResponse, siteResponse] = await Promise.all([
       apiRequest<{ items: SubjectRow[]; total: number }>(
         `/studies/${currentStudyId.value}/subjects?${params}`,
@@ -95,14 +96,14 @@ watch(query, () => {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(load, 300)
 })
-watch([status, siteName, currentStudyId], load)
+watch([status, siteId, currentStudyId], load)
 watch(
-  () => siteScope.currentSiteName,
+  () => siteScope.currentSiteId,
   (value) => {
-    if (siteName.value !== value) siteName.value = value
+    if (siteId.value !== value) siteId.value = value
   },
 )
-watch(siteName, (value) => siteScope.setCurrent(value))
+watch(siteId, (value) => siteScope.setCurrent(value))
 onMounted(load)
 </script>
 
@@ -131,12 +132,12 @@ onMounted(load)
         />
       </el-select>
       <el-select
-        v-model="siteName"
+        v-model="siteId"
         :aria-label="t('subjects.filterSite')"
         :placeholder="t('subjects.allSites')"
         clearable
       >
-        <el-option v-for="site in sites" :key="site.name" :label="site.name" :value="site.name" />
+        <el-option v-for="site in sites" :key="site.id" :label="site.name" :value="site.id" />
       </el-select>
       <span class="toolbar-spacer" />
       <el-button v-if="!isMobile" @click="router.push('/exports')">

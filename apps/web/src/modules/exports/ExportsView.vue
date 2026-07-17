@@ -8,15 +8,17 @@ import { useSiteScopeStore } from '@/modules/studies/site-scope.store'
 import StatusPill from '@/components/ui/StatusPill.vue'
 
 interface SiteRow {
+  id: string
   name: string
 }
 interface ExportJob {
   id: string
+  siteId: string | null
   siteName: string | null
   dataset: string
   format: string
   status: 'queued' | 'running' | 'completed' | 'failed'
-  parameters: { siteName?: string | null; dateFrom?: string | null; dateTo?: string | null }
+  parameters: { siteId?: string | null; dateFrom?: string | null; dateTo?: string | null }
   rowCount: number | null
   errorMessage: string | null
   requestedBy: string
@@ -33,7 +35,7 @@ const creating = ref(false)
 const error = ref('')
 const sites = ref<SiteRow[]>([])
 const jobs = ref<ExportJob[]>([])
-const form = ref({ dataset: 'subjects', format: 'csv', siteName: '', dateRange: [] as string[] })
+const form = ref({ dataset: 'subjects', format: 'csv', siteId: '', dateRange: [] as string[] })
 let pollTimer: ReturnType<typeof setTimeout> | undefined
 
 function schedulePoll() {
@@ -93,7 +95,7 @@ async function createExport() {
         body: JSON.stringify({
           dataset: form.value.dataset,
           format: form.value.format,
-          siteName: form.value.siteName || null,
+          siteId: form.value.siteId || null,
           ...(form.value.dateRange.length === 2
             ? { dateFrom: form.value.dateRange[0], dateTo: form.value.dateRange[1] }
             : {}),
@@ -113,25 +115,19 @@ async function createExport() {
   }
 }
 
-function siteName(siteName: string | null) {
-  if (!siteName) return t('exports.allAuthorizedSites')
-  const site = sites.value.find((item) => item.name === siteName)
-  return site?.name ?? siteName
-}
-
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString(locale.value)
 }
 
 watch(() => studyStore.currentStudyId, load)
 watch(
-  () => siteScope.currentSiteName,
+  () => siteScope.currentSiteId,
   (value) => {
-    if (form.value.siteName !== value) form.value.siteName = value
+    if (form.value.siteId !== value) form.value.siteId = value
   },
 )
 watch(
-  () => form.value.siteName,
+  () => form.value.siteId,
   (value) => siteScope.setCurrent(value),
 )
 onMounted(load)
@@ -169,17 +165,12 @@ onBeforeUnmount(() => {
           </el-form-item>
           <el-form-item :label="t('exports.siteScope')">
             <el-select
-              v-model="form.siteName"
+              v-model="form.siteId"
               clearable
               :placeholder="t('exports.allAuthorizedSites')"
               style="width: 100%"
             >
-              <el-option
-                v-for="site in sites"
-                :key="site.name"
-                :label="site.name"
-                :value="site.name"
-              />
+              <el-option v-for="site in sites" :key="site.id" :label="site.name" :value="site.id" />
             </el-select>
           </el-form-item>
           <el-form-item :label="t('exports.dateRange')">
@@ -223,7 +214,9 @@ onBeforeUnmount(() => {
             </template>
           </el-table-column>
           <el-table-column :label="t('exports.siteScope')" min-width="190">
-            <template #default="scope">{{ siteName(scope.row.siteName) }}</template>
+            <template #default="scope">{{
+              scope.row.siteName || t('exports.allAuthorizedSites')
+            }}</template>
           </el-table-column>
           <el-table-column :label="t('subjects.status')" width="110">
             <template #default="scope">
