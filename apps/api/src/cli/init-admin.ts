@@ -11,7 +11,7 @@ const password = process.env.EDC_ADMIN_PASSWORD
 
 if (!username || !password) {
   console.error(
-    '用法：设置 EDC_ADMIN_PASSWORD 环境变量后运行 npm.cmd run admin:init -- --username <用户名> [--name <显示名>]',
+    '用法：设置 EDC_ADMIN_PASSWORD 环境变量后运行 npm run admin:init -- --username <用户名> [--name <显示名>]',
   )
   process.exitCode = 1
 } else if (password.length < 12) {

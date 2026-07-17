@@ -11,8 +11,6 @@ storage/exports/*
 !storage/data/.gitkeep
 !storage/uploads/.gitkeep
 !storage/quarantine/.gitkeep
-playwright-report/
-test-results/
 *.log
 .DS_Store
 Thumbs.db

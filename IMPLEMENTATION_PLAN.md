@@ -79,7 +79,7 @@ Node.js Fastify API
 | 数据校验    | Zod，共享基础领域契约                      |
 | 表单拖拽    | Vue 兼容的 Sortable 封装，实施前锁定具体包 |
 | 单元测试    | Vitest + Vue Test Utils                    |
-| 端到端测试  | Playwright                                 |
+| 交互验收    | ChatGPT 电脑功能或浏览器功能               |
 
 网络请求优先使用浏览器 `fetch` 的统一封装，不为简单请求额外引入 Axios。
 
@@ -104,7 +104,7 @@ Node.js Fastify API
 - ESLint + Prettier 统一质量与格式。
 - `package-lock.json` 固定完整依赖树。
 - 当前环境为 Node.js 24.18.0、npm 11.16.0；项目通过版本文件声明并在启动时检查兼容版本。
-- PowerShell 中统一调用 `npm.cmd`，不修改全局执行策略。
+- 使用跨平台的 `npm` 命令；不修改系统级执行策略。
 
 ## 4. 仓库结构
 
@@ -231,7 +231,7 @@ Node.js Fastify API
 提供本地初始化命令：
 
 ```text
-npm.cmd run admin:init -- --username <name>
+npm run admin:init -- --username <name>
 ```
 
 密码通过交互式隐藏输入或受控环境变量提供，不接受命令行明文密码。命令可重复执行但不能覆盖已有管理员。
@@ -548,7 +548,7 @@ npm.cmd run admin:init -- --username <name>
 2. **Repository 集成测试：** 使用临时 SQLite 数据库验证约束、事务和迁移。
 3. **API 测试：** Fastify inject 验证认证、作用域、错误格式和审计。
 4. **组件测试：** 表单字段、权限控件、主题和响应式组件。
-5. **端到端测试：** Playwright 覆盖主要用户旅程。
+5. **交互验收：** 使用 ChatGPT 电脑功能或浏览器功能覆盖主要用户旅程，并保留操作记录。
 
 ### 16.2 必测用户旅程
 
@@ -597,8 +597,8 @@ npm.cmd run admin:init -- --username <name>
 - 阶段 5–6 已完成筛选、手动判定、入组、编号、四种随机化方法、启用冻结、结果展示及相关权限/审计测试。
 - 阶段 7 已完成访视绑定、重复表单、受试者详情动态数据录入、随访工作台、受试者事件入口、预设用途事件与匹配数据记录关联，以及私有文件上传/下载、隔离删除与启动恢复；退出后结局补录通过不限制受试者终末状态的数据录入策略支持。
 - 阶段 8 已完成权限过滤的真实仪表盘及统计 CSV、CSV/Excel 持久化后台导出与私有下载、项目审计分页筛选/差异详情/CSV 导出，以及系统级登录审计入口；千名受试者后台导出边界已自动化验证。
-- 响应式自动化当前覆盖桌面、768–1366px 平板类别和手机；手机复杂配置路由保持关闭，核心录入路径采用单列/Vant 交互。
-- 最终门禁通过：Prettier、TypeScript、ESLint、29 项 Vitest、生产构建及 108 项 Playwright 设备矩阵均为零失败；Playwright 未执行项均为设备产品策略声明的 policy skip。
+- 响应式验收覆盖桌面、768–1366px 平板类别和手机；手机复杂配置路由保持关闭，核心录入路径采用单列/Vant 交互。
+- 最终自动化门禁为 Prettier、TypeScript、ESLint、29 项 Vitest 和生产构建；界面交互与多设备视口改由 ChatGPT 电脑功能或浏览器功能验收。
 
 ### 阶段 0：项目基础与依赖审批
 
@@ -608,7 +608,7 @@ npm.cmd run admin:init -- --username <name>
 - 列出精确依赖、版本和用途，向用户请求一次本地安装批准。
 - 创建环境变量模板、Git 忽略和开发命令。
 
-验收：不全局安装；`npm.cmd` 脚本可运行；前后端空项目通过类型检查。
+验收：不全局安装；跨平台 `npm` 脚本可运行；前后端空项目通过类型检查。
 
 ### 阶段 1：完整页面外壳与设计系统
 
@@ -707,7 +707,7 @@ npm.cmd run admin:init -- --username <name>
 
 交付：
 
-- 全量 E2E、权限安全、随机化和迁移回归。
+- 权限安全、随机化和迁移回归；使用 ChatGPT 电脑功能或浏览器功能完成核心交互旅程验收。
 - 自动化验收示例数据，以及初始化/启动/升级/恢复说明；生产数据库不自动灌入演示数据。
 - SQLite 生产参数、容量监控和维护说明。
 - 清理 mock、调试入口和未使用依赖。
@@ -730,11 +730,10 @@ npm.cmd run admin:init -- --username <name>
 阶段性质量命令计划统一为：
 
 ```text
-npm.cmd run typecheck
-npm.cmd run lint
-npm.cmd run test
-npm.cmd run test:e2e
-npm.cmd run build
+npm run typecheck
+npm run lint
+npm run test
+npm run build
 ```
 
 ## 20. 主要风险与控制措施
@@ -753,12 +752,12 @@ npm.cmd run build
 
 ## 21. 执行前确认点
 
-实施开始前只需再次确认本计划。确认后首先执行阶段 0；涉及 `npm.cmd install` 时会单独向用户请求许可，并一次列出准备安装的本地依赖及用途。
+实施开始前只需再次确认本计划。确认后首先执行阶段 0；涉及 `npm install` 时会单独向用户请求许可，并一次列出准备安装的本地依赖及用途。
 
 本计划不授权以下操作：
 
 - 全局安装 npm 包或软件。
-- 修改系统 PowerShell 执行策略。
+- 修改系统级执行策略。
 - 部署 Nginx、配置 HTTPS 或 cron。
 - 创建云资源或向外部系统发送数据。
 
@@ -775,4 +774,4 @@ npm.cmd run build
 7. 文件受权限保护，物理删除后数据库与文件目录一致。
 8. 中英文、浅色/深色、响应式与基础无障碍验收通过。
 9. SQLite 生产配置、管理员初始化、启动、升级和容量边界有文档。
-10. 类型检查、测试、E2E 和生产构建全部通过。
+10. 类型检查、自动化测试和生产构建全部通过；核心界面旅程已通过 ChatGPT 电脑功能或浏览器功能验收。

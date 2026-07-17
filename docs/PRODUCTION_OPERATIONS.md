@@ -27,10 +27,10 @@
 NODE_ENV=production
 HOST=127.0.0.1
 PORT=3000
-DATABASE_PATH=D:/edc-data/edc.sqlite
-UPLOAD_ROOT=D:/edc-data/uploads
-QUARANTINE_ROOT=D:/edc-data/quarantine
-EXPORT_ROOT=D:/edc-data/exports
+DATABASE_PATH=/srv/edc-data/edc.sqlite
+UPLOAD_ROOT=/srv/edc-data/uploads
+QUARANTINE_ROOT=/srv/edc-data/quarantine
+EXPORT_ROOT=/srv/edc-data/exports
 SESSION_COOKIE_NAME=edc_session
 SESSION_TTL_HOURS=12
 TRUST_PROXY=true
@@ -43,18 +43,18 @@ TRUST_PROXY=true
 
 ## 4. 首次部署
 
-1. 在发布目录运行 `npm.cmd ci` 和 `npm.cmd run build`。
+1. 在发布目录运行 `npm ci` 和 `npm run build`。
 2. 创建数据目录并设置最小文件权限。
 3. 注入环境变量。
 4. 设置仅用于当前命令的 `EDC_ADMIN_PASSWORD`，运行：
 
-   ```powershell
-   npm.cmd run admin:init -- --username <用户名> --name "<显示名>"
+   ```sh
+   npm run admin:init -- --username <用户名> --name "<显示名>"
    ```
 
    初始化命令会创建数据库、顺序执行全部迁移并创建唯一的新系统超级管理员；已有同名账号时拒绝覆盖。
 
-5. 运行 `npm.cmd start`。启动时自动执行幂等迁移、恢复未完成的表单迁移与导出任务，并处理隔离目录残留。
+5. 运行 `npm run start`。启动时自动执行幂等迁移、恢复未完成的表单迁移与导出任务，并处理隔离目录残留。
 6. 请求 `GET /api/health`，必须得到 `status: ok`。
 7. 通过 HTTPS 登录，立即确认管理员账号、语言、主题和当前研究列表。
 
@@ -81,8 +81,8 @@ TRUST_PROXY=true
 
 1. 通知用户进入维护窗口，停止 API 进程；等待日志确认当前后台迁移/导出任务完成，并确认 3000 端口不再监听。不得强制终止正在写文件或切换表单版本的任务。
 2. 对数据库、上传、隔离目录做同一恢复点备份；记录当前应用版本和 `PRAGMA user_version`。
-3. 部署新源码并运行 `npm.cmd ci`、`npm.cmd run typecheck`、`npm.cmd run build`。
-4. 使用与生产相同路径配置启动 `npm.cmd start`。迁移在监听端口前同步完成；任一迁移失败时进程不会正常提供服务。
+3. 部署新源码并运行 `npm ci`、`npm run typecheck`、`npm run build`。
+4. 使用与生产相同路径配置启动 `npm run start`。迁移在监听端口前同步完成；任一迁移失败时进程不会正常提供服务。
 5. 验证 `/api/health`、登录、研究列表、受试者详情、文件下载和审计查询。
 6. 保留升级前备份，直到业务验收完成。
 
