@@ -25,12 +25,10 @@ interface VisitSummary {
 
 interface FollowupSubject {
   id: string
-  site_id: string
   screening_number: string
   subject_number: string | null
   random_number: string | null
   status: string
-  site_code: string
   site_name: string
   visits: VisitSummary[]
 }
@@ -38,7 +36,7 @@ interface FollowupSubject {
 interface WorklistResponse {
   items: FollowupSubject[]
   visits: Array<{ id: string; code: string; name: string }>
-  sites: Array<{ id: string; code: string; name: string }>
+  sites: Array<{ name: string }>
   total: number
   page: number
   pageSize: number
@@ -51,7 +49,7 @@ const siteScope = useSiteScopeStore()
 const { width } = useViewport()
 const loading = ref(false)
 const query = ref('')
-const siteId = ref('')
+const siteName = ref('')
 const visitId = ref('')
 const items = ref<FollowupSubject[]>([])
 const visits = ref<WorklistResponse['visits']>([])
@@ -127,7 +125,7 @@ async function load() {
   try {
     const params = new URLSearchParams({ pageSize: '100' })
     if (query.value.trim()) params.set('query', query.value.trim())
-    if (siteId.value) params.set('siteId', siteId.value)
+    if (siteName.value) params.set('siteName', siteName.value)
     const response = await apiRequest<WorklistResponse>(
       `/studies/${currentStudyId.value}/followups?${params}`,
     )
@@ -147,12 +145,12 @@ watch(query, () => {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(load, 300)
 })
-watch(siteId, load)
-watch(siteId, (value) => siteScope.setCurrent(value))
+watch(siteName, load)
+watch(siteName, (value) => siteScope.setCurrent(value))
 watch(
-  () => siteScope.currentSiteId,
+  () => siteScope.currentSiteName,
   (value) => {
-    if (siteId.value !== value) siteId.value = value
+    if (siteName.value !== value) siteName.value = value
   },
 )
 watch(currentStudyId, load)
@@ -171,13 +169,8 @@ onMounted(load)
   <template v-else>
     <div class="toolbar followup-toolbar">
       <el-input v-model="query" :placeholder="t('followups.searchPlaceholder')" clearable />
-      <el-select v-model="siteId" :placeholder="t('followups.allSites')" clearable>
-        <el-option
-          v-for="site in sites"
-          :key="site.id"
-          :label="`${site.code} · ${site.name}`"
-          :value="site.id"
-        />
+      <el-select v-model="siteName" :placeholder="t('followups.allSites')" clearable>
+        <el-option v-for="site in sites" :key="site.name" :label="site.name" :value="site.name" />
       </el-select>
       <el-select v-model="visitId" :placeholder="t('followups.allVisits')" clearable>
         <el-option
@@ -223,7 +216,7 @@ onMounted(load)
           </template>
         </el-table-column>
         <el-table-column :label="t('followups.site')" min-width="170">
-          <template #default="{ row }">{{ row.site_code }} · {{ row.site_name }}</template>
+          <template #default="{ row }">{{ row.site_name }}</template>
         </el-table-column>
         <el-table-column :label="t('followups.completion')" min-width="180">
           <template #default="{ row }">
@@ -258,7 +251,7 @@ onMounted(load)
           <header>
             <div>
               <strong>{{ subject.subject_number || subject.screening_number }}</strong
-              ><span>{{ subject.site_code }} · {{ subject.site_name }}</span>
+              ><span>{{ subject.site_name }}</span>
             </div>
             <VanTag
               :type="

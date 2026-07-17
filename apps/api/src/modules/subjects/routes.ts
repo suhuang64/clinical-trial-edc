@@ -17,7 +17,7 @@ import {
 } from '../files/routes.js'
 
 const createSubjectSchema = z.object({
-  siteId: z.string().uuid(),
+  siteName: z.string().trim().min(1).max(200),
   screeningData: z.record(z.string(), z.unknown()).default({}),
 })
 const updateScreeningSchema = z.object({
@@ -48,7 +48,7 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
             'lost_to_followup',
           ])
           .optional(),
-        siteId: z.string().uuid().optional(),
+        siteName: z.string().trim().min(1).max(200).optional(),
         query: z.string().trim().max(100).optional(),
         page: z.coerce.number().int().positive().default(1),
         pageSize: z.coerce.number().int().min(1).max(100).default(50),
@@ -64,20 +64,20 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
     const filters = parsedFilters.data
     const clauses = ['s.study_id = ?']
     const values: unknown[] = [studyId]
-    if (auth.allowedSiteIds && auth.allowedSiteIds.length === 0) return { items: [] }
-    if (auth.allowedSiteIds) {
-      clauses.push(`s.site_id IN (${auth.allowedSiteIds.map(() => '?').join(',')})`)
-      values.push(...auth.allowedSiteIds)
+    if (auth.allowedSiteNames && auth.allowedSiteNames.length === 0) return { items: [] }
+    if (auth.allowedSiteNames) {
+      clauses.push(`s.site_name IN (${auth.allowedSiteNames.map(() => '?').join(',')})`)
+      values.push(...auth.allowedSiteNames)
     }
-    if (filters.siteId) {
-      if (auth.allowedSiteIds && !auth.allowedSiteIds.includes(filters.siteId))
+    if (filters.siteName) {
+      if (auth.allowedSiteNames && !auth.allowedSiteNames.includes(filters.siteName))
         return reply.code(403).send({
           code: 'SITE_ACCESS_DENIED',
           message: '您无权访问该研究中心',
           requestId: request.id,
         })
-      clauses.push('s.site_id = ?')
-      values.push(filters.siteId)
+      clauses.push('s.site_name = ?')
+      values.push(filters.siteName)
     }
     if (filters.status) {
       clauses.push('s.status = ?')
@@ -97,7 +97,7 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
     ).value
     const items = sqlite
       .prepare(
-        `SELECT s.*, st.code AS site_code, st.name AS site_name FROM subjects s JOIN sites st ON st.study_id = s.study_id AND st.id = s.site_id WHERE ${clauses.join(' AND ')} ORDER BY s.updated_at DESC LIMIT ? OFFSET ?`,
+        `SELECT s.*, st.name AS site_name FROM subjects s JOIN sites st ON st.study_id = s.study_id AND st.name = s.site_name WHERE ${clauses.join(' AND ')} ORDER BY s.updated_at DESC LIMIT ? OFFSET ?`,
       )
       .all(...values, filters.pageSize, (filters.page - 1) * filters.pageSize)
     return { items, total, page: filters.page, pageSize: filters.pageSize }
@@ -117,8 +117,8 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
         details: parsed.error.flatten(),
         requestId: request.id,
       })
-    if (!(await requireAllowedSite(auth, parsed.data.siteId, request, reply))) return
-    if (!(await requireActiveSite(studyId, parsed.data.siteId, request, reply))) return
+    if (!(await requireAllowedSite(auth, parsed.data.siteName, request, reply))) return
+    if (!(await requireActiveSite(studyId, parsed.data.siteName, request, reply))) return
     const id = randomUUID(),
       now = new Date().toISOString()
     let screeningNumber = ''
@@ -126,12 +126,12 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
       screeningNumber = numberingRepository.allocateNextNumber(studyId, 'screening')
       sqlite
         .prepare(
-          `INSERT INTO subjects (id, study_id, site_id, screening_number, status, screening_data_json, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, 'screening', ?, ?, ?, ?)`,
+          `INSERT INTO subjects (id, study_id, site_name, screening_number, status, screening_data_json, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, 'screening', ?, ?, ?, ?)`,
         )
         .run(
           id,
           studyId,
-          parsed.data.siteId,
+          parsed.data.siteName,
           screeningNumber,
           JSON.stringify(parsed.data.screeningData),
           auth.user.id,
@@ -143,7 +143,7 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
       requestId: request.id,
       actorUserId: auth.user.id,
       studyId,
-      siteId: parsed.data.siteId,
+      siteName: parsed.data.siteName,
       subjectId: id,
       objectType: 'subject',
       objectId: id,
@@ -161,17 +161,17 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
     if (!auth) return
     const subject = sqlite
       .prepare(
-        `SELECT s.*, st.code AS site_code, st.name AS site_name
+        `SELECT s.*, st.name AS site_name
          FROM subjects s
-         JOIN sites st ON st.study_id = s.study_id AND st.id = s.site_id
+         JOIN sites st ON st.study_id = s.study_id AND st.name = s.site_name
          WHERE s.study_id = ? AND s.id = ?`,
       )
-      .get(studyId, subjectId) as { site_id: string } | undefined
+      .get(studyId, subjectId) as { site_name: string } | undefined
     if (!subject)
       return reply
         .code(404)
         .send({ code: 'SUBJECT_NOT_FOUND', message: '受试者不存在', requestId: request.id })
-    if (!(await requireAllowedSite(auth, subject.site_id, request, reply))) return
+    if (!(await requireAllowedSite(auth, subject.site_name, request, reply))) return
     return { subject }
   })
 
@@ -180,23 +180,23 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
     const auth = await requireStudyPermission(request, reply, studyId, 'subject.view')
     if (!auth) return
     const subject = sqlite
-      .prepare('SELECT id, site_id FROM subjects WHERE study_id = ? AND id = ?')
-      .get(studyId, subjectId) as { id: string; site_id: string } | undefined
+      .prepare('SELECT id, site_name FROM subjects WHERE study_id = ? AND id = ?')
+      .get(studyId, subjectId) as { id: string; site_name: string } | undefined
     if (!subject)
       return reply
         .code(404)
         .send({ code: 'SUBJECT_NOT_FOUND', message: '受试者不存在', requestId: request.id })
-    if (!(await requireAllowedSite(auth, subject.site_id, request, reply))) return
+    if (!(await requireAllowedSite(auth, subject.site_name, request, reply))) return
     const items = sqlite
       .prepare(
         `SELECT a.id, a.action, a.object_type, a.object_id,
                 a.reason, a.created_at, u.display_name AS actor_name
          FROM audit_events a
          LEFT JOIN users u ON u.id = a.actor_user_id
-         WHERE a.study_id = ? AND a.site_id = ? AND a.subject_id = ?
+         WHERE a.study_id = ? AND a.site_name = ? AND a.subject_id = ?
          ORDER BY a.created_at DESC`,
       )
-      .all(studyId, subject.site_id, subjectId)
+      .all(studyId, subject.site_name, subjectId)
     return { items }
   })
 
@@ -216,13 +216,13 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
       })
     const subject = sqlite
       .prepare(
-        `SELECT id, site_id, status, row_version, screening_data_json
+        `SELECT id, site_name, status, row_version, screening_data_json
          FROM subjects WHERE study_id = ? AND id = ?`,
       )
       .get(studyId, subjectId) as
       | {
           id: string
-          site_id: string
+          site_name: string
           status: string
           row_version: number
           screening_data_json: string
@@ -232,8 +232,8 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
       return reply
         .code(404)
         .send({ code: 'SUBJECT_NOT_FOUND', message: '受试者不存在', requestId: request.id })
-    if (!(await requireAllowedSite(auth, subject.site_id, request, reply))) return
-    if (!(await requireActiveSite(studyId, subject.site_id, request, reply))) return
+    if (!(await requireAllowedSite(auth, subject.site_name, request, reply))) return
+    if (!(await requireActiveSite(studyId, subject.site_name, request, reply))) return
     if (subject.status !== 'screening')
       return reply.code(409).send({
         code: 'SCREENING_DATA_LOCKED',
@@ -251,14 +251,14 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
       .prepare(
         `UPDATE subjects
          SET screening_data_json = ?, row_version = row_version + 1, updated_at = ?
-         WHERE study_id = ? AND site_id = ? AND id = ? AND status = 'screening'
+         WHERE study_id = ? AND site_name = ? AND id = ? AND status = 'screening'
            AND row_version = ?`,
       )
       .run(
         JSON.stringify(parsed.data.screeningData),
         now,
         studyId,
-        subject.site_id,
+        subject.site_name,
         subjectId,
         parsed.data.rowVersion,
       )
@@ -272,7 +272,7 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
       requestId: request.id,
       actorUserId: auth.user.id,
       studyId,
-      siteId: subject.site_id,
+      siteName: subject.site_name,
       subjectId,
       objectType: 'subject',
       objectId: subjectId,
@@ -298,13 +298,13 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
         .send({ code: 'VALIDATION_ERROR', message: '请选择筛选结论', requestId: request.id })
     const subject = sqlite
       .prepare(`SELECT * FROM subjects WHERE study_id = ? AND id = ?`)
-      .get(studyId, subjectId) as { id: string; site_id: string; status: string } | undefined
+      .get(studyId, subjectId) as { id: string; site_name: string; status: string } | undefined
     if (!subject)
       return reply
         .code(404)
         .send({ code: 'SUBJECT_NOT_FOUND', message: '受试者不存在', requestId: request.id })
-    if (!(await requireAllowedSite(auth, subject.site_id, request, reply))) return
-    if (!(await requireActiveSite(studyId, subject.site_id, request, reply))) return
+    if (!(await requireAllowedSite(auth, subject.site_name, request, reply))) return
+    if (!(await requireActiveSite(studyId, subject.site_name, request, reply))) return
     if (subject.status !== 'screening')
       return reply.code(409).send({
         code: 'INVALID_SUBJECT_STATE',
@@ -319,7 +319,7 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
         `UPDATE subjects
          SET status = ?, screening_conclusion = ?, screening_failure_reason = ?,
              row_version = row_version + 1, updated_at = ?
-         WHERE study_id = ? AND site_id = ? AND id = ?`,
+         WHERE study_id = ? AND site_name = ? AND id = ?`,
       )
       .run(
         nextStatus,
@@ -327,14 +327,14 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
         parsed.data.conclusion === 'failed' ? parsed.data.reason : null,
         now,
         studyId,
-        subject.site_id,
+        subject.site_name,
         subjectId,
       )
     await writeAudit({
       requestId: request.id,
       actorUserId: auth.user.id,
       studyId,
-      siteId: subject.site_id,
+      siteName: subject.site_name,
       subjectId,
       objectType: 'subject',
       objectId: subjectId,
@@ -356,15 +356,15 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
     const subject = sqlite
       .prepare(`SELECT * FROM subjects WHERE study_id = ? AND id = ?`)
       .get(studyId, subjectId) as
-      { id: string; site_id: string; status: string; subject_number: string | null } | undefined
+      { id: string; site_name: string; status: string; subject_number: string | null } | undefined
     if (!subject)
       return reply
         .code(404)
         .send({ code: 'SUBJECT_NOT_FOUND', message: '受试者不存在', requestId: request.id })
-    if (!(await requireAllowedSite(auth, subject.site_id, request, reply))) return
+    if (!(await requireAllowedSite(auth, subject.site_name, request, reply))) return
     if (subject.status === 'enrolled' && subject.subject_number)
       return { id: subjectId, subjectNumber: subject.subject_number, status: 'enrolled' }
-    if (!(await requireActiveSite(studyId, subject.site_id, request, reply))) return
+    if (!(await requireActiveSite(studyId, subject.site_name, request, reply))) return
     if (subject.status !== 'pending_enrollment')
       return reply.code(409).send({
         code: 'INVALID_SUBJECT_STATE',
@@ -379,15 +379,15 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
         .prepare(
           `UPDATE subjects
            SET subject_number = ?, status = 'enrolled', row_version = row_version + 1, updated_at = ?
-           WHERE study_id = ? AND site_id = ? AND id = ? AND status = 'pending_enrollment'`,
+           WHERE study_id = ? AND site_name = ? AND id = ? AND status = 'pending_enrollment'`,
         )
-        .run(subjectNumber, now, studyId, subject.site_id, subjectId)
+        .run(subjectNumber, now, studyId, subject.site_name, subjectId)
     })()
     await writeAudit({
       requestId: request.id,
       actorUserId: auth.user.id,
       studyId,
-      siteId: subject.site_id,
+      siteName: subject.site_name,
       subjectId,
       objectType: 'subject',
       objectId: subjectId,
@@ -417,14 +417,14 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
     const subject = sqlite
       .prepare('SELECT * FROM subjects WHERE study_id = ? AND id = ?')
       .get(studyId, subjectId) as
-      | ({ id: string; site_id: string; random_number: string | null } & Record<string, unknown>)
+      | ({ id: string; site_name: string; random_number: string | null } & Record<string, unknown>)
       | undefined
     if (!subject)
       return reply
         .code(404)
         .send({ code: 'SUBJECT_NOT_FOUND', message: '受试者不存在', requestId: request.id })
-    if (!(await requireAllowedSite(auth, subject.site_id, request, reply))) return
-    if (!(await requireActiveSite(studyId, subject.site_id, request, reply))) return
+    if (!(await requireAllowedSite(auth, subject.site_name, request, reply))) return
+    if (!(await requireActiveSite(studyId, subject.site_name, request, reply))) return
     if (subject.random_number)
       return reply.code(409).send({
         code: 'RANDOMIZED_SUBJECT_DELETE_FORBIDDEN',
@@ -445,10 +445,10 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
     ).value
     let quarantinedFiles: ReturnType<typeof quarantineFilesForSubject> = []
     try {
-      quarantinedFiles = quarantineFilesForSubject(studyId, subject.site_id, subjectId)
+      quarantinedFiles = quarantineFilesForSubject(studyId, subject.site_name, subjectId)
       sqlite
-        .prepare('DELETE FROM subjects WHERE study_id = ? AND site_id = ? AND id = ?')
-        .run(studyId, subject.site_id, subjectId)
+        .prepare('DELETE FROM subjects WHERE study_id = ? AND site_name = ? AND id = ?')
+        .run(studyId, subject.site_name, subjectId)
     } catch (error) {
       restoreQuarantinedFiles(quarantinedFiles)
       request.log.error(error)
@@ -462,7 +462,7 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
       requestId: request.id,
       actorUserId: auth.user.id,
       studyId,
-      siteId: subject.site_id,
+      siteName: subject.site_name,
       subjectId,
       objectType: 'subject',
       objectId: subjectId,

@@ -23,13 +23,11 @@ import {
 interface SubjectRow {
   id: string
   study_id: string
-  site_id: string
+  site_name: string
   screening_number: string
   subject_number: string | null
   random_number: string | null
   status: string
-  site_code: string
-  site_name: string
 }
 
 interface FormRow {
@@ -47,7 +45,7 @@ interface FormRow {
 interface RecordRow {
   id: string
   study_id: string
-  site_id: string
+  site_name: string
   subject_id: string
   form_id: string
   form_version_id: string
@@ -94,9 +92,9 @@ const updateRecordSchema = z.object({
 function subjectByStudy(studyId: string, subjectId: string) {
   return sqlite
     .prepare(
-      `SELECT s.*, st.code AS site_code, st.name AS site_name
+      `SELECT s.*, st.name AS site_name
        FROM subjects s
-       JOIN sites st ON st.study_id = s.study_id AND st.id = s.site_id
+       JOIN sites st ON st.study_id = s.study_id AND st.name = s.site_name
        WHERE s.study_id = ? AND s.id = ?`,
     )
     .get(studyId, subjectId) as SubjectRow | undefined
@@ -247,10 +245,10 @@ function validateFileReferences(
     const rows = sqlite
       .prepare(
         `SELECT id, record_id FROM uploaded_files
-         WHERE study_id = ? AND site_id = ? AND subject_id = ? AND field_key = ?
+         WHERE study_id = ? AND site_name = ? AND subject_id = ? AND field_key = ?
            AND id IN (${uniqueIds.map(() => '?').join(',')})`,
       )
-      .all(subject.study_id, subject.site_id, subject.id, field.key, ...uniqueIds) as Array<{
+      .all(subject.study_id, subject.site_name, subject.id, field.key, ...uniqueIds) as Array<{
       id: string
       record_id: string | null
     }>
@@ -270,14 +268,14 @@ function attachFileReferences(
 ) {
   const update = sqlite.prepare(
     `UPDATE uploaded_files SET record_id = ?
-     WHERE study_id = ? AND site_id = ? AND subject_id = ? AND field_key = ? AND id = ?
+     WHERE study_id = ? AND site_name = ? AND subject_id = ? AND field_key = ? AND id = ?
        AND (record_id IS NULL OR record_id = ?)`,
   )
   for (const field of definition.fields.filter((item) => item.type === 'file')) {
     const ids = values[field.key]
     if (!Array.isArray(ids)) continue
     for (const id of ids) {
-      update.run(recordId, subject.study_id, subject.site_id, subject.id, field.key, id, recordId)
+      update.run(recordId, subject.study_id, subject.site_name, subject.id, field.key, id, recordId)
     }
   }
 }
@@ -318,7 +316,7 @@ async function authorizeSubject(
       .send({ code: 'SUBJECT_NOT_FOUND', message: '受试者不存在', requestId: request.id })
     return null
   }
-  if (!(await requireAllowedSite(auth, subject.site_id, request, reply))) return null
+  if (!(await requireAllowedSite(auth, subject.site_name, request, reply))) return null
   return { auth, subject }
 }
 
@@ -327,7 +325,7 @@ function auditContext(request: FastifyRequest, auth: StudyAuthorization, subject
     requestId: request.id,
     actorUserId: auth.user.id,
     studyId: subject.study_id,
-    siteId: subject.site_id,
+    siteName: subject.site_name,
     subjectId: subject.id,
     ipAddress: request.ip,
     userAgent: request.headers['user-agent'],
@@ -453,7 +451,7 @@ export const recordRoutes: FastifyPluginAsync = async (app) => {
     if (!(await verifyCsrf(request, reply))) return
     const { auth, subject } = authorization
     if (!(await requireStudyStatus(subject.study_id, ['active'], request, reply))) return
-    if (!(await requireActiveSite(subject.study_id, subject.site_id, request, reply))) return
+    if (!(await requireActiveSite(subject.study_id, subject.site_name, request, reply))) return
     const parsed = createRecordSchema.safeParse(request.body)
     if (!parsed.success) {
       return reply.code(400).send({
@@ -527,13 +525,13 @@ export const recordRoutes: FastifyPluginAsync = async (app) => {
       sqlite
         .prepare(
           `INSERT INTO data_records
-           (id, study_id, site_id, subject_id, form_id, form_version_id, visit_id, repeat_index, status, row_version, created_by, updated_by, created_at, updated_at)
+           (id, study_id, site_name, subject_id, form_id, form_version_id, visit_id, repeat_index, status, row_version, created_by, updated_by, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
         )
         .run(
           id,
           subject.study_id,
-          subject.site_id,
+          subject.site_name,
           subject.id,
           form.id,
           form.active_version_id,
@@ -594,7 +592,7 @@ export const recordRoutes: FastifyPluginAsync = async (app) => {
     if (!(await verifyCsrf(request, reply))) return
     const { auth, subject } = authorization
     if (!(await requireStudyStatus(subject.study_id, ['active'], request, reply))) return
-    if (!(await requireActiveSite(subject.study_id, subject.site_id, request, reply))) return
+    if (!(await requireActiveSite(subject.study_id, subject.site_name, request, reply))) return
     const { studyId, subjectId, recordId } = request.params as {
       studyId: string
       subjectId: string
@@ -696,7 +694,7 @@ export const recordRoutes: FastifyPluginAsync = async (app) => {
     if (!(await verifyCsrf(request, reply))) return
     const { auth, subject } = authorization
     if (!(await requireStudyStatus(subject.study_id, ['active'], request, reply))) return
-    if (!(await requireActiveSite(subject.study_id, subject.site_id, request, reply))) return
+    if (!(await requireActiveSite(subject.study_id, subject.site_name, request, reply))) return
     const { studyId, subjectId, recordId } = request.params as {
       studyId: string
       subjectId: string

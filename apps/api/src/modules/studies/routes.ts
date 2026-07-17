@@ -42,7 +42,6 @@ const counterConfigurationSchema = z.object({
   randomization: counterRuleSchema,
 })
 const siteSchema = z.object({
-  code: z.string().trim().min(1).max(80),
   name: z.string().trim().min(1).max(200),
   principalInvestigator: z.string().trim().max(200).nullable().optional(),
   contactName: z.string().trim().max(200).nullable().optional(),
@@ -361,19 +360,19 @@ export const studyRoutes: FastifyPluginAsync = async (app) => {
     const studyId = (request.params as { studyId: string }).studyId
     const auth = await requireStudyPermission(request, reply, studyId, 'site.view')
     if (!auth) return
-    let query = db.selectFrom('sites').selectAll().where('study_id', '=', studyId).orderBy('code')
-    if (auth.allowedSiteIds) {
-      if (auth.allowedSiteIds.length === 0) return { items: [] }
-      query = query.where('id', 'in', auth.allowedSiteIds)
+    let query = db.selectFrom('sites').selectAll().where('study_id', '=', studyId).orderBy('name')
+    if (auth.allowedSiteNames) {
+      if (auth.allowedSiteNames.length === 0) return { items: [] }
+      query = query.where('name', 'in', auth.allowedSiteNames)
     }
     const rows = await query.execute()
     const countStatement = sqlite.prepare(
-      `SELECT COUNT(*) AS value FROM subjects WHERE study_id = ? AND site_id = ? AND status NOT IN ('screening', 'screen_failed')`,
+      `SELECT COUNT(*) AS value FROM subjects WHERE study_id = ? AND site_name = ? AND status NOT IN ('screening', 'screen_failed')`,
     )
     return {
       items: rows.map((site) => ({
         ...site,
-        enrolled_count: (countStatement.get(studyId, site.id) as { value: number }).value,
+        enrolled_count: (countStatement.get(studyId, site.name) as { value: number }).value,
       })),
     }
   })
@@ -392,12 +391,18 @@ export const studyRoutes: FastifyPluginAsync = async (app) => {
         details: parsed.error.flatten(),
         requestId: request.id,
       })
-    const id = randomUUID(),
-      now = new Date().toISOString()
+    const duplicate = await db
+      .selectFrom('sites')
+      .select('name')
+      .where('name', '=', parsed.data.name)
+      .executeTakeFirst()
+    if (duplicate)
+      return reply
+        .code(409)
+        .send({ code: 'SITE_NAME_EXISTS', message: '中心名称已存在', requestId: request.id })
+    const now = new Date().toISOString()
     const record = {
-      id,
       study_id: studyId,
-      code: parsed.data.code,
       name: parsed.data.name,
       principal_investigator: parsed.data.principalInvestigator ?? null,
       contact_name: parsed.data.contactName ?? null,
@@ -413,24 +418,24 @@ export const studyRoutes: FastifyPluginAsync = async (app) => {
       requestId: request.id,
       actorUserId: auth.user.id,
       studyId,
-      siteId: id,
+      siteName: record.name,
       objectType: 'site',
-      objectId: id,
+      objectId: record.name,
       action: 'site.created',
       after: record,
       ipAddress: request.ip,
       userAgent: request.headers['user-agent'],
     })
-    return reply.code(201).send({ id })
+    return reply.code(201).send({ name: record.name })
   })
 
-  app.put('/:studyId/sites/:siteId', async (request, reply) => {
-    const { studyId, siteId } = request.params as { studyId: string; siteId: string }
+  app.put('/:studyId/sites/:siteName', async (request, reply) => {
+    const { studyId, siteName } = request.params as { studyId: string; siteName: string }
     const auth = await requireStudyPermission(request, reply, studyId, 'site.manage')
     if (!auth) return
     if (!(await verifyCsrf(request, reply))) return
     if (!(await requireStudyStatus(studyId, ['draft', 'active'], request, reply))) return
-    if (auth.allowedSiteIds !== null && !auth.allowedSiteIds.includes(siteId))
+    if (auth.allowedSiteNames !== null && !auth.allowedSiteNames.includes(siteName))
       return reply.code(403).send({
         code: 'SITE_ACCESS_DENIED',
         message: '您无权管理该研究中心',
@@ -448,7 +453,7 @@ export const studyRoutes: FastifyPluginAsync = async (app) => {
       .selectFrom('sites')
       .selectAll()
       .where('study_id', '=', studyId)
-      .where('id', '=', siteId)
+      .where('name', '=', siteName)
       .executeTakeFirst()
     if (!before)
       return reply
@@ -456,17 +461,15 @@ export const studyRoutes: FastifyPluginAsync = async (app) => {
         .send({ code: 'SITE_NOT_FOUND', message: '研究中心不存在', requestId: request.id })
     const duplicate = await db
       .selectFrom('sites')
-      .select('id')
-      .where('study_id', '=', studyId)
-      .where('code', '=', parsed.data.code)
-      .where('id', '!=', siteId)
+      .select('name')
+      .where('name', '=', parsed.data.name)
+      .where('name', '!=', siteName)
       .executeTakeFirst()
     if (duplicate)
       return reply
         .code(409)
-        .send({ code: 'SITE_CODE_EXISTS', message: '中心编号已存在', requestId: request.id })
+        .send({ code: 'SITE_NAME_EXISTS', message: '中心名称已存在', requestId: request.id })
     const after = {
-      code: parsed.data.code,
       name: parsed.data.name,
       principal_investigator: parsed.data.principalInvestigator ?? null,
       contact_name: parsed.data.contactName ?? null,
@@ -475,35 +478,63 @@ export const studyRoutes: FastifyPluginAsync = async (app) => {
       enrollment_target: parsed.data.enrollmentTarget,
       updated_at: new Date().toISOString(),
     }
-    await db
-      .updateTable('sites')
-      .set(after)
-      .where('study_id', '=', studyId)
-      .where('id', '=', siteId)
-      .execute()
+    sqlite.transaction(() => {
+      sqlite.pragma('defer_foreign_keys = ON')
+      sqlite
+        .prepare(
+          `UPDATE sites SET name = ?, principal_investigator = ?, contact_name = ?,
+             contact_phone = ?, contact_email = ?, enrollment_target = ?, updated_at = ?
+           WHERE study_id = ? AND name = ?`,
+        )
+        .run(
+          after.name,
+          after.principal_investigator,
+          after.contact_name,
+          after.contact_phone,
+          after.contact_email,
+          after.enrollment_target,
+          after.updated_at,
+          studyId,
+          siteName,
+        )
+      if (after.name !== siteName)
+        for (const table of [
+          'membership_sites',
+          'audit_events',
+          'subjects',
+          'data_records',
+          'randomization_assignments',
+          'uploaded_files',
+          'subject_events',
+          'export_jobs',
+        ])
+          sqlite
+            .prepare(`UPDATE ${table} SET site_name = ? WHERE site_name = ?`)
+            .run(after.name, siteName)
+    })()
     await writeAudit({
       requestId: request.id,
       actorUserId: auth.user.id,
       studyId,
-      siteId,
+      siteName: after.name,
       objectType: 'site',
-      objectId: siteId,
+      objectId: after.name,
       action: 'site.updated',
       before,
       after,
       ipAddress: request.ip,
       userAgent: request.headers['user-agent'],
     })
-    return { id: siteId }
+    return { name: after.name }
   })
 
-  app.post('/:studyId/sites/:siteId/status', async (request, reply) => {
-    const { studyId, siteId } = request.params as { studyId: string; siteId: string }
+  app.post('/:studyId/sites/:siteName/status', async (request, reply) => {
+    const { studyId, siteName } = request.params as { studyId: string; siteName: string }
     const auth = await requireStudyPermission(request, reply, studyId, 'site.manage')
     if (!auth) return
     if (!(await verifyCsrf(request, reply))) return
     if (!(await requireStudyStatus(studyId, ['draft', 'active'], request, reply))) return
-    if (auth.allowedSiteIds !== null && !auth.allowedSiteIds.includes(siteId))
+    if (auth.allowedSiteNames !== null && !auth.allowedSiteNames.includes(siteName))
       return reply.code(403).send({
         code: 'SITE_ACCESS_DENIED',
         message: '您无权管理该研究中心',
@@ -516,9 +547,9 @@ export const studyRoutes: FastifyPluginAsync = async (app) => {
         .send({ code: 'VALIDATION_ERROR', message: '中心状态不合法', requestId: request.id })
     const site = await db
       .selectFrom('sites')
-      .select(['id', 'status'])
+      .select(['name', 'status'])
       .where('study_id', '=', studyId)
-      .where('id', '=', siteId)
+      .where('name', '=', siteName)
       .executeTakeFirst()
     if (!site)
       return reply
@@ -528,22 +559,22 @@ export const studyRoutes: FastifyPluginAsync = async (app) => {
       .updateTable('sites')
       .set({ status: parsed.data.status, updated_at: new Date().toISOString() })
       .where('study_id', '=', studyId)
-      .where('id', '=', siteId)
+      .where('name', '=', siteName)
       .execute()
     await writeAudit({
       requestId: request.id,
       actorUserId: auth.user.id,
       studyId,
-      siteId,
+      siteName,
       objectType: 'site',
-      objectId: siteId,
+      objectId: siteName,
       action: 'site.status_changed',
       before: { status: site.status },
       after: { status: parsed.data.status },
       ipAddress: request.ip,
       userAgent: request.headers['user-agent'],
     })
-    return { id: siteId, status: parsed.data.status }
+    return { name: siteName, status: parsed.data.status }
   })
 
   app.get('/:studyId/visits', async (request, reply) => {

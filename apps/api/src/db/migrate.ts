@@ -50,16 +50,13 @@ CREATE TABLE IF NOT EXISTS studies (
 );
 
 CREATE TABLE IF NOT EXISTS sites (
-  id TEXT PRIMARY KEY,
+  name TEXT PRIMARY KEY COLLATE NOCASE,
   study_id TEXT NOT NULL REFERENCES studies(id) ON DELETE CASCADE,
-  code TEXT NOT NULL COLLATE NOCASE,
-  name TEXT NOT NULL,
   principal_investigator TEXT,
   enrollment_target INTEGER NOT NULL DEFAULT 0 CHECK (enrollment_target >= 0),
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE (study_id, code)
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_sites_study ON sites(study_id);
 
@@ -97,8 +94,8 @@ CREATE INDEX IF NOT EXISTS idx_memberships_study ON study_memberships(study_id);
 
 CREATE TABLE IF NOT EXISTS membership_sites (
   membership_id TEXT NOT NULL REFERENCES study_memberships(id) ON DELETE CASCADE,
-  site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
-  PRIMARY KEY (membership_id, site_id)
+  site_name TEXT NOT NULL REFERENCES sites(name) ON DELETE CASCADE ON UPDATE CASCADE,
+  PRIMARY KEY (membership_id, site_name)
 );
 
 CREATE TABLE IF NOT EXISTS membership_permission_overrides (
@@ -113,7 +110,7 @@ CREATE TABLE IF NOT EXISTS audit_events (
   request_id TEXT NOT NULL,
   actor_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
   study_id TEXT REFERENCES studies(id) ON DELETE SET NULL,
-  site_id TEXT REFERENCES sites(id) ON DELETE SET NULL,
+  site_name TEXT REFERENCES sites(name) ON DELETE SET NULL ON UPDATE CASCADE,
   object_type TEXT NOT NULL,
   object_id TEXT,
   action TEXT NOT NULL,
@@ -187,7 +184,7 @@ CREATE TABLE IF NOT EXISTS study_counters (
 CREATE TABLE IF NOT EXISTS subjects (
   id TEXT PRIMARY KEY,
   study_id TEXT NOT NULL REFERENCES studies(id) ON DELETE CASCADE,
-  site_id TEXT NOT NULL REFERENCES sites(id),
+  site_name TEXT NOT NULL REFERENCES sites(name) ON UPDATE CASCADE,
   screening_number TEXT NOT NULL,
   subject_number TEXT,
   random_number TEXT,
@@ -203,13 +200,13 @@ CREATE TABLE IF NOT EXISTS subjects (
   UNIQUE (study_id, subject_number),
   UNIQUE (study_id, random_number)
 );
-CREATE INDEX IF NOT EXISTS idx_subjects_study_site ON subjects(study_id, site_id);
+CREATE INDEX IF NOT EXISTS idx_subjects_study_site ON subjects(study_id, site_name);
 CREATE INDEX IF NOT EXISTS idx_subjects_status ON subjects(study_id, status);
 
 CREATE TABLE IF NOT EXISTS data_records (
   id TEXT PRIMARY KEY,
   study_id TEXT NOT NULL REFERENCES studies(id) ON DELETE CASCADE,
-  site_id TEXT NOT NULL REFERENCES sites(id),
+  site_name TEXT NOT NULL REFERENCES sites(name) ON UPDATE CASCADE,
   subject_id TEXT NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
   form_id TEXT NOT NULL REFERENCES forms(id),
   form_version_id TEXT NOT NULL REFERENCES form_versions(id),
@@ -259,7 +256,7 @@ CREATE TABLE IF NOT EXISTS randomization_schemes (
 CREATE TABLE IF NOT EXISTS randomization_assignments (
   id TEXT PRIMARY KEY,
   study_id TEXT NOT NULL REFERENCES studies(id) ON DELETE CASCADE,
-  site_id TEXT NOT NULL REFERENCES sites(id),
+  site_name TEXT NOT NULL REFERENCES sites(name) ON UPDATE CASCADE,
   subject_id TEXT NOT NULL REFERENCES subjects(id) ON DELETE RESTRICT UNIQUE,
   scheme_id TEXT NOT NULL REFERENCES randomization_schemes(id) ON DELETE RESTRICT,
   sequence_position INTEGER NOT NULL,
@@ -468,7 +465,7 @@ export function runMigrations(sqlite: Database.Database) {
         CREATE TABLE uploaded_files (
           id TEXT PRIMARY KEY,
           study_id TEXT NOT NULL REFERENCES studies(id) ON DELETE CASCADE,
-          site_id TEXT NOT NULL REFERENCES sites(id),
+          site_name TEXT NOT NULL REFERENCES sites(name) ON UPDATE CASCADE,
           subject_id TEXT NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
           record_id TEXT REFERENCES data_records(id) ON DELETE SET NULL,
           field_key TEXT NOT NULL,
@@ -480,7 +477,7 @@ export function runMigrations(sqlite: Database.Database) {
           uploaded_by TEXT NOT NULL REFERENCES users(id),
           created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
-        CREATE INDEX idx_uploaded_files_scope ON uploaded_files(study_id, site_id, subject_id);
+        CREATE INDEX idx_uploaded_files_scope ON uploaded_files(study_id, site_name, subject_id);
         CREATE INDEX idx_uploaded_files_record ON uploaded_files(study_id, record_id, field_key);
       `)
       sqlite.prepare('INSERT INTO schema_migrations (version) VALUES (6)').run()
@@ -493,7 +490,7 @@ export function runMigrations(sqlite: Database.Database) {
         CREATE TABLE subject_events (
           id TEXT PRIMARY KEY,
           study_id TEXT NOT NULL REFERENCES studies(id) ON DELETE CASCADE,
-          site_id TEXT NOT NULL REFERENCES sites(id),
+          site_name TEXT NOT NULL REFERENCES sites(name) ON UPDATE CASCADE,
           subject_id TEXT NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
           event_type TEXT NOT NULL CHECK (event_type IN (
             'adverse_event', 'concomitant_medication', 'protocol_deviation', 'endpoint',
@@ -508,7 +505,7 @@ export function runMigrations(sqlite: Database.Database) {
           created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE INDEX idx_subject_events_scope
-        ON subject_events(study_id, site_id, subject_id, occurred_on, created_at);
+        ON subject_events(study_id, site_name, subject_id, occurred_on, created_at);
       `)
       sqlite.prepare('INSERT INTO schema_migrations (version) VALUES (7)').run()
       sqlite.pragma('user_version = 7')
@@ -520,7 +517,7 @@ export function runMigrations(sqlite: Database.Database) {
         CREATE TABLE export_jobs (
           id TEXT PRIMARY KEY,
           study_id TEXT NOT NULL REFERENCES studies(id) ON DELETE CASCADE,
-          site_id TEXT REFERENCES sites(id),
+          site_name TEXT REFERENCES sites(name) ON UPDATE CASCADE,
           dataset TEXT NOT NULL CHECK (dataset IN ('subjects', 'clinical_data', 'events', 'audit')),
           format TEXT NOT NULL CHECK (format IN ('csv', 'xlsx')),
           status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'completed', 'failed')),
@@ -533,7 +530,7 @@ export function runMigrations(sqlite: Database.Database) {
           started_at TEXT,
           completed_at TEXT
         );
-        CREATE INDEX idx_export_jobs_scope ON export_jobs(study_id, site_id, created_at DESC);
+        CREATE INDEX idx_export_jobs_scope ON export_jobs(study_id, site_name, created_at DESC);
         INSERT OR IGNORE INTO permissions (code, domain, name_zh, name_en)
         VALUES ('audit.export', 'audit', '导出审计日志', 'Export audit trail');
         INSERT OR IGNORE INTO role_permissions (role_code, permission_code)
@@ -548,7 +545,7 @@ export function runMigrations(sqlite: Database.Database) {
       sqlite.exec(`
         ALTER TABLE audit_events ADD COLUMN subject_id TEXT;
         CREATE INDEX idx_audit_subject_created
-        ON audit_events(study_id, site_id, subject_id, created_at DESC);
+        ON audit_events(study_id, site_name, subject_id, created_at DESC);
       `)
       sqlite.prepare('INSERT INTO schema_migrations (version) VALUES (9)').run()
       sqlite.pragma('user_version = 9')
@@ -608,10 +605,283 @@ export function runMigrations(sqlite: Database.Database) {
         ALTER TABLE subject_events
         ADD COLUMN record_id TEXT REFERENCES data_records(id) ON DELETE SET NULL;
         CREATE INDEX idx_subject_events_record
-        ON subject_events(study_id, site_id, subject_id, record_id);
+        ON subject_events(study_id, site_name, subject_id, record_id);
       `)
       sqlite.prepare('INSERT INTO schema_migrations (version) VALUES (13)').run()
       sqlite.pragma('user_version = 13')
     })()
+  }
+  if (version < 14) {
+    const hasLegacySiteCode = (sqlite.pragma('table_info(sites)') as Array<{ name: string }>).some(
+      (column) => column.name === 'code',
+    )
+    if (!hasLegacySiteCode) {
+      sqlite.transaction(() => {
+        sqlite.prepare('INSERT INTO schema_migrations (version) VALUES (14)').run()
+        sqlite.pragma('user_version = 14')
+      })()
+    } else {
+      const foreignKeysEnabled = Boolean(sqlite.pragma('foreign_keys', { simple: true }))
+      sqlite.pragma('foreign_keys = OFF')
+      try {
+        sqlite.transaction(() => {
+          const siteRows = sqlite
+            .prepare('SELECT id, study_id, code, name FROM sites')
+            .all() as Array<{ id: string; study_id: string; code: string; name: string }>
+          const siteNameById = new Map(siteRows.map((site) => [site.id, site.name]))
+          const assignments = sqlite
+            .prepare(
+              `SELECT id, site_id, stratum_key, factors_json, decision_json
+             FROM randomization_assignments`,
+            )
+            .all() as Array<{
+            id: string
+            site_id: string
+            stratum_key: string | null
+            factors_json: string
+            decision_json: string
+          }>
+          const replaceSiteFactor = (value: string | null, siteName: string) =>
+            value?.replace(/(^|\|)site=[^|]*/u, `$1site=${siteName}`) ?? null
+          const updateAssignment = sqlite.prepare(
+            `UPDATE randomization_assignments
+           SET stratum_key = ?, factors_json = ?, decision_json = ?
+           WHERE id = ?`,
+          )
+          for (const assignment of assignments) {
+            const siteName = siteNameById.get(assignment.site_id)
+            if (!siteName) throw new Error(`Unknown site for assignment ${assignment.id}`)
+            const factors = JSON.parse(assignment.factors_json) as Record<string, unknown>
+            if (Object.hasOwn(factors, 'site')) factors.site = siteName
+            const decision = JSON.parse(assignment.decision_json) as Record<string, unknown>
+            if (typeof decision.stratumKey === 'string')
+              decision.stratumKey = replaceSiteFactor(decision.stratumKey, siteName)
+            updateAssignment.run(
+              replaceSiteFactor(assignment.stratum_key, siteName),
+              JSON.stringify(factors),
+              JSON.stringify(decision),
+              assignment.id,
+            )
+          }
+
+          const strata = sqlite
+            .prepare(
+              `SELECT state.scheme_id, state.stratum_key, site.name AS site_name, site.code AS site_code
+             FROM randomization_strata_state state
+             JOIN randomization_schemes scheme ON scheme.id = state.scheme_id
+             JOIN sites site ON site.study_id = scheme.study_id`,
+            )
+            .all() as Array<{
+            scheme_id: string
+            stratum_key: string
+            site_name: string
+            site_code: string
+          }>
+          const updateStratum = sqlite.prepare(
+            `UPDATE randomization_strata_state SET stratum_key = ?
+           WHERE scheme_id = ? AND stratum_key = ?`,
+          )
+          for (const state of strata) {
+            const marker = `site=${state.site_code}`
+            if (state.stratum_key.split('|').includes(marker))
+              updateStratum.run(
+                state.stratum_key
+                  .split('|')
+                  .map((part) => (part === marker ? `site=${state.site_name}` : part))
+                  .join('|'),
+                state.scheme_id,
+                state.stratum_key,
+              )
+          }
+
+          for (const table of [
+            'membership_sites',
+            'audit_events',
+            'subjects',
+            'data_records',
+            'randomization_assignments',
+            'uploaded_files',
+            'subject_events',
+            'export_jobs',
+          ]) {
+            sqlite.exec(
+              `UPDATE ${table} SET site_id = (SELECT name FROM sites WHERE sites.id = ${table}.site_id) WHERE site_id IS NOT NULL`,
+            )
+          }
+          sqlite.exec(`
+          ALTER TABLE sites RENAME COLUMN name TO display_name;
+          ALTER TABLE sites RENAME COLUMN id TO name;
+          ALTER TABLE membership_sites RENAME COLUMN site_id TO site_name;
+          ALTER TABLE audit_events RENAME COLUMN site_id TO site_name;
+          ALTER TABLE subjects RENAME COLUMN site_id TO site_name;
+          ALTER TABLE data_records RENAME COLUMN site_id TO site_name;
+          ALTER TABLE randomization_assignments RENAME COLUMN site_id TO site_name;
+          ALTER TABLE uploaded_files RENAME COLUMN site_id TO site_name;
+          ALTER TABLE subject_events RENAME COLUMN site_id TO site_name;
+          ALTER TABLE export_jobs RENAME COLUMN site_id TO site_name;
+          UPDATE sites SET name = display_name;
+          PRAGMA legacy_alter_table = ON;
+          ALTER TABLE sites RENAME TO sites_legacy;
+          CREATE TABLE sites (
+            name TEXT PRIMARY KEY COLLATE NOCASE,
+            study_id TEXT NOT NULL REFERENCES studies(id) ON DELETE CASCADE,
+            principal_investigator TEXT,
+            enrollment_target INTEGER NOT NULL DEFAULT 0 CHECK (enrollment_target >= 0),
+            status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            contact_name TEXT,
+            contact_phone TEXT,
+            contact_email TEXT
+          );
+          INSERT INTO sites
+            (name, study_id, principal_investigator, enrollment_target, status,
+             created_at, updated_at, contact_name, contact_phone, contact_email)
+          SELECT name, study_id, principal_investigator, enrollment_target, status,
+                 created_at, updated_at, contact_name, contact_phone, contact_email
+          FROM sites_legacy;
+          DROP TABLE sites_legacy;
+          CREATE INDEX idx_sites_study ON sites(study_id);
+          PRAGMA legacy_alter_table = OFF;
+        `)
+          sqlite.prepare('INSERT INTO schema_migrations (version) VALUES (14)').run()
+          sqlite.pragma('user_version = 14')
+        })()
+        const violations = sqlite.pragma('foreign_key_check') as unknown[]
+        if (violations.length) throw new Error('Migration 14 produced foreign key violations')
+      } finally {
+        if (foreignKeysEnabled) sqlite.pragma('foreign_keys = ON')
+      }
+    }
+  }
+  if (version < 15) {
+    const hasIntermediateSiteId = (
+      sqlite.pragma('table_info(sites)') as Array<{ name: string }>
+    ).some((column) => column.name === 'id')
+    const foreignKeysEnabled = Boolean(sqlite.pragma('foreign_keys', { simple: true }))
+    if (hasIntermediateSiteId) sqlite.pragma('foreign_keys = OFF')
+    try {
+      sqlite.transaction(() => {
+        if (hasIntermediateSiteId) {
+          const siteRows = sqlite.prepare('SELECT id, name FROM sites').all() as Array<{
+            id: string
+            name: string
+          }>
+          const siteNameById = new Map(siteRows.map((site) => [site.id, site.name]))
+          const assignments = sqlite
+            .prepare(
+              `SELECT id, site_id, stratum_key, factors_json, decision_json
+               FROM randomization_assignments`,
+            )
+            .all() as Array<{
+            id: string
+            site_id: string
+            stratum_key: string | null
+            factors_json: string
+            decision_json: string
+          }>
+          const replaceSiteFactor = (value: string | null, siteId: string, siteName: string) =>
+            value
+              ?.split('|')
+              .map((part) => (part === `site=${siteId}` ? `site=${siteName}` : part))
+              .join('|') ?? null
+          const updateAssignment = sqlite.prepare(
+            `UPDATE randomization_assignments
+             SET stratum_key = ?, factors_json = ?, decision_json = ? WHERE id = ?`,
+          )
+          for (const assignment of assignments) {
+            const siteName = siteNameById.get(assignment.site_id)
+            if (!siteName) throw new Error(`Unknown site for assignment ${assignment.id}`)
+            const factors = JSON.parse(assignment.factors_json) as Record<string, unknown>
+            if (Object.hasOwn(factors, 'site')) factors.site = siteName
+            const decision = JSON.parse(assignment.decision_json) as Record<string, unknown>
+            if (typeof decision.stratumKey === 'string')
+              decision.stratumKey = replaceSiteFactor(
+                decision.stratumKey,
+                assignment.site_id,
+                siteName,
+              )
+            updateAssignment.run(
+              replaceSiteFactor(assignment.stratum_key, assignment.site_id, siteName),
+              JSON.stringify(factors),
+              JSON.stringify(decision),
+              assignment.id,
+            )
+          }
+
+          const states = sqlite
+            .prepare('SELECT scheme_id, stratum_key FROM randomization_strata_state')
+            .all() as Array<{ scheme_id: string; stratum_key: string }>
+          const updateState = sqlite.prepare(
+            `UPDATE randomization_strata_state SET stratum_key = ?
+             WHERE scheme_id = ? AND stratum_key = ?`,
+          )
+          for (const state of states) {
+            let nextKey = state.stratum_key
+            for (const site of siteRows)
+              nextKey = replaceSiteFactor(nextKey, site.id, site.name) ?? nextKey
+            if (nextKey !== state.stratum_key)
+              updateState.run(nextKey, state.scheme_id, state.stratum_key)
+          }
+
+          for (const table of [
+            'membership_sites',
+            'audit_events',
+            'subjects',
+            'data_records',
+            'randomization_assignments',
+            'uploaded_files',
+            'subject_events',
+            'export_jobs',
+          ])
+            sqlite.exec(
+              `UPDATE ${table} SET site_id = (SELECT name FROM sites WHERE sites.id = ${table}.site_id) WHERE site_id IS NOT NULL`,
+            )
+
+          sqlite.exec(`
+            ALTER TABLE sites RENAME COLUMN name TO display_name;
+            ALTER TABLE sites RENAME COLUMN id TO name;
+            ALTER TABLE membership_sites RENAME COLUMN site_id TO site_name;
+            ALTER TABLE audit_events RENAME COLUMN site_id TO site_name;
+            ALTER TABLE subjects RENAME COLUMN site_id TO site_name;
+            ALTER TABLE data_records RENAME COLUMN site_id TO site_name;
+            ALTER TABLE randomization_assignments RENAME COLUMN site_id TO site_name;
+            ALTER TABLE uploaded_files RENAME COLUMN site_id TO site_name;
+            ALTER TABLE subject_events RENAME COLUMN site_id TO site_name;
+            ALTER TABLE export_jobs RENAME COLUMN site_id TO site_name;
+            UPDATE sites SET name = display_name;
+            PRAGMA legacy_alter_table = ON;
+            ALTER TABLE sites RENAME TO sites_legacy;
+            CREATE TABLE sites (
+              name TEXT PRIMARY KEY COLLATE NOCASE,
+              study_id TEXT NOT NULL REFERENCES studies(id) ON DELETE CASCADE,
+              principal_investigator TEXT,
+              enrollment_target INTEGER NOT NULL DEFAULT 0 CHECK (enrollment_target >= 0),
+              status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
+              created_at TEXT NOT NULL DEFAULT (datetime('now')),
+              updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+              contact_name TEXT,
+              contact_phone TEXT,
+              contact_email TEXT
+            );
+            INSERT INTO sites
+              (name, study_id, principal_investigator, enrollment_target, status,
+               created_at, updated_at, contact_name, contact_phone, contact_email)
+            SELECT name, study_id, principal_investigator, enrollment_target, status,
+                   created_at, updated_at, contact_name, contact_phone, contact_email
+            FROM sites_legacy;
+            DROP TABLE sites_legacy;
+            CREATE INDEX idx_sites_study ON sites(study_id);
+            PRAGMA legacy_alter_table = OFF;
+          `)
+        }
+        sqlite.prepare('INSERT INTO schema_migrations (version) VALUES (15)').run()
+        sqlite.pragma('user_version = 15')
+      })()
+      const violations = sqlite.pragma('foreign_key_check') as unknown[]
+      if (violations.length) throw new Error('Migration 15 produced foreign key violations')
+    } finally {
+      if (hasIntermediateSiteId && foreignKeysEnabled) sqlite.pragma('foreign_keys = ON')
+    }
   }
 }

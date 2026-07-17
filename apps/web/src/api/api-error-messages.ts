@@ -66,7 +66,7 @@ const englishMessages: Record<string, string> = {
   ROW_VERSION_CONFLICT: 'This record was changed by another user. Reload it before editing again.',
   INVALID_STUDY_TRANSITION: 'The requested study status transition is not allowed.',
   PROTOCOL_CODE_EXISTS: 'This protocol code is already in use.',
-  SITE_CODE_EXISTS: 'This site code is already in use within the study.',
+  SITE_NAME_EXISTS: 'This site name is already in use.',
   STUDY_DATE_INVALID: 'The study end date cannot be earlier than its start date.',
   VISIT_CODE_EXISTS: 'This visit code is already in use within the study.',
   VISIT_IN_USE: 'This visit is in use and cannot be deleted.',

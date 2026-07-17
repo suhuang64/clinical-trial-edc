@@ -7,8 +7,6 @@ import { useStudyStore } from '@/modules/studies/study.store'
 import { useSiteScopeStore } from '@/modules/studies/site-scope.store'
 
 interface SiteRow {
-  id: string
-  code: string
   name: string
 }
 interface AuditRow {
@@ -16,8 +14,7 @@ interface AuditRow {
   requestId: string
   actorUsername: string | null
   actorName: string | null
-  siteId: string | null
-  siteCode: string | null
+  siteName: string | null
   objectType: string
   objectId: string | null
   action: string
@@ -46,7 +43,7 @@ const detailOpen = computed({
   },
 })
 const filters = ref({
-  siteId: '',
+  siteName: '',
   actor: '',
   action: '',
   objectType: '',
@@ -76,7 +73,7 @@ function queryString() {
     page: String(filters.value.page),
     pageSize: String(filters.value.pageSize),
   })
-  for (const key of ['siteId', 'actor', 'action', 'objectType'] as const)
+  for (const key of ['siteName', 'actor', 'action', 'objectType'] as const)
     if (filters.value[key]) query.set(key, filters.value[key])
   if (filters.value.dateRange.length === 2) {
     query.set('dateFrom', filters.value.dateRange[0]!)
@@ -113,7 +110,7 @@ function search() {
 }
 function reset() {
   filters.value = {
-    siteId: '',
+    siteName: '',
     actor: '',
     action: '',
     objectType: '',
@@ -137,7 +134,7 @@ async function exportAudit() {
       body: JSON.stringify({
         dataset: 'audit',
         format: 'csv',
-        siteId: filters.value.siteId || null,
+        siteName: filters.value.siteName || null,
         ...(filters.value.dateRange.length === 2
           ? { dateFrom: filters.value.dateRange[0], dateTo: filters.value.dateRange[1] }
           : {}),
@@ -158,16 +155,16 @@ function formatDateTime(value: string) {
 
 watch(() => studyStore.currentStudyId, load)
 watch(
-  () => siteScope.currentSiteId,
+  () => siteScope.currentSiteName,
   (value) => {
-    if (filters.value.siteId !== value) {
-      filters.value.siteId = value
+    if (filters.value.siteName !== value) {
+      filters.value.siteName = value
       void load()
     }
   },
 )
 watch(
-  () => filters.value.siteId,
+  () => filters.value.siteName,
   (value) => siteScope.setCurrent(value),
 )
 onMounted(load)
@@ -186,16 +183,16 @@ onMounted(load)
         <el-form inline @submit.prevent="search">
           <el-form-item :label="t('audit.site')">
             <el-select
-              v-model="filters.siteId"
+              v-model="filters.siteName"
               clearable
               :placeholder="t('audit.allAuthorizedSites')"
               style="width: 190px"
             >
               <el-option
                 v-for="site in sites"
-                :key="site.id"
-                :label="`${site.code} · ${site.name}`"
-                :value="site.id"
+                :key="site.name"
+                :label="site.name"
+                :value="site.name"
               />
             </el-select>
           </el-form-item>
@@ -270,7 +267,7 @@ onMounted(load)
               <div class="muted-text">{{ scope.row.actorUsername }}</div>
             </template>
           </el-table-column>
-          <el-table-column prop="siteCode" :label="t('audit.site')" width="110" />
+          <el-table-column prop="siteName" :label="t('audit.site')" min-width="160" />
           <el-table-column :label="t('audit.action')" min-width="160">
             <template #default="scope">
               {{ actionLabels[scope.row.action] ?? scope.row.action }}

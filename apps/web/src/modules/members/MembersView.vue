@@ -21,13 +21,11 @@ interface MemberRow {
   display_name: string
   role_code: RoleCode
   status: 'active' | 'disabled'
-  siteIds: string[]
+  siteNames: string[]
   overrides: PermissionOverride[]
 }
 
 interface SiteRow {
-  id: string
-  code: string
   name: string
 }
 
@@ -57,11 +55,11 @@ const createForm = reactive({
   displayName: '',
   initialPassword: '',
   roleCode: 'investigator' as RoleCode,
-  siteIds: [] as string[],
+  siteNames: [] as string[],
 })
 const editForm = reactive({
   roleCode: 'investigator' as RoleCode,
-  siteIds: [] as string[],
+  siteNames: [] as string[],
   status: 'active' as 'active' | 'disabled',
 })
 const permissionEffects = reactive<Record<string, 'inherit' | OverrideEffect>>({})
@@ -111,8 +109,8 @@ const permissionGroups = computed(() => {
 
 function siteScopeLabel(member: MemberRow) {
   if (member.role_code === 'study_admin') return t('members.allSites')
-  return member.siteIds
-    .map((id) => sites.value.find((site) => site.id === id)?.name || id)
+  return member.siteNames
+    .map((name) => sites.value.find((site) => site.name === name)?.name || name)
     .join('、')
 }
 
@@ -145,8 +143,8 @@ async function load() {
   }
 }
 
-function validateRoleScope(roleCode: RoleCode, siteIds: string[]) {
-  if (roleCode !== 'study_admin' && !siteIds.length) {
+function validateRoleScope(roleCode: RoleCode, siteNames: string[]) {
+  if (roleCode !== 'study_admin' && !siteNames.length) {
     ElMessage.warning(t('members.siteScopeRequired'))
     return false
   }
@@ -163,7 +161,7 @@ async function createMember() {
     ElMessage.warning(t('members.initialPasswordLength'))
     return
   }
-  if (!validateRoleScope(createForm.roleCode, createForm.siteIds)) return
+  if (!validateRoleScope(createForm.roleCode, createForm.siteNames)) return
   saving.value = true
   try {
     await apiRequest(`/studies/${currentStudyId.value}/members`, {
@@ -172,7 +170,7 @@ async function createMember() {
         ...createForm,
         username: createForm.username.trim(),
         displayName: createForm.displayName.trim(),
-        siteIds: createForm.roleCode === 'study_admin' ? [] : createForm.siteIds,
+        siteNames: createForm.roleCode === 'study_admin' ? [] : createForm.siteNames,
         overrides: [],
       }),
     })
@@ -183,7 +181,7 @@ async function createMember() {
       displayName: '',
       initialPassword: '',
       roleCode: 'investigator',
-      siteIds: [],
+      siteNames: [],
     })
     await load()
   } catch (error) {
@@ -196,7 +194,7 @@ async function createMember() {
 function openPermissions(member: MemberRow) {
   selectedMember.value = member
   editForm.roleCode = member.role_code
-  editForm.siteIds = [...member.siteIds]
+  editForm.siteNames = [...member.siteNames]
   editForm.status = member.status
   for (const permission of permissions.value) permissionEffects[permission.code] = 'inherit'
   for (const override of member.overrides)
@@ -215,14 +213,14 @@ function collectOverrides() {
 
 async function savePermissions() {
   if (!currentStudyId.value || !selectedMember.value) return
-  if (!validateRoleScope(editForm.roleCode, editForm.siteIds)) return
+  if (!validateRoleScope(editForm.roleCode, editForm.siteNames)) return
   saving.value = true
   try {
     await apiRequest(`/studies/${currentStudyId.value}/members/${selectedMember.value.id}`, {
       method: 'PUT',
       body: JSON.stringify({
         roleCode: editForm.roleCode,
-        siteIds: editForm.roleCode === 'study_admin' ? [] : editForm.siteIds,
+        siteNames: editForm.roleCode === 'study_admin' ? [] : editForm.siteNames,
         status: editForm.status,
         overrides: collectOverrides(),
       }),
@@ -262,7 +260,7 @@ async function toggleMember(member: MemberRow) {
       method: 'PUT',
       body: JSON.stringify({
         roleCode: member.role_code,
-        siteIds: member.role_code === 'study_admin' ? [] : member.siteIds,
+        siteNames: member.role_code === 'study_admin' ? [] : member.siteNames,
         status: nextStatus,
         overrides: member.overrides,
       }),
@@ -434,13 +432,8 @@ onMounted(load)
         :label="t('members.siteScope')"
         required
       >
-        <el-select v-model="createForm.siteIds" multiple filterable style="width: 100%">
-          <el-option
-            v-for="site in sites"
-            :key="site.id"
-            :label="`${site.code} · ${site.name}`"
-            :value="site.id"
-          />
+        <el-select v-model="createForm.siteNames" multiple filterable style="width: 100%">
+          <el-option v-for="site in sites" :key="site.name" :label="site.name" :value="site.name" />
         </el-select>
       </el-form-item>
       <el-alert :title="t('members.createHint')" type="info" show-icon :closable="false" />
@@ -487,13 +480,8 @@ onMounted(load)
         :label="t('members.siteScope')"
         required
       >
-        <el-select v-model="editForm.siteIds" multiple filterable style="width: 100%">
-          <el-option
-            v-for="site in sites"
-            :key="site.id"
-            :label="`${site.code} · ${site.name}`"
-            :value="site.id"
-          />
+        <el-select v-model="editForm.siteNames" multiple filterable style="width: 100%">
+          <el-option v-for="site in sites" :key="site.name" :label="site.name" :value="site.name" />
         </el-select>
       </el-form-item>
     </el-form>

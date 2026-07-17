@@ -73,9 +73,7 @@ const activeNav = computed(() => String(route.meta.nav ?? 'dashboard'))
 const pageTitle = computed(() => t(String(route.meta.titleKey ?? 'common.appName')))
 const isDashboard = computed(() => route.name === 'dashboard')
 const siteScopeLabel = computed(() =>
-  siteScope.currentSite
-    ? `${siteScope.currentSite.code} · ${siteScope.currentSite.name}`
-    : t('common.allSites'),
+  siteScope.currentSite ? siteScope.currentSite.name : t('common.allSites'),
 )
 
 async function savePreferences(locale = preferences.locale, theme = preferences.theme) {
@@ -189,7 +187,7 @@ onMounted(() => studies.load())
           <el-select
             v-if="studies.currentStudyId"
             class="site-select"
-            :model-value="siteScope.currentSiteId"
+            :model-value="siteScope.currentSiteName"
             :loading="siteScope.loading"
             :aria-label="t('common.switchSite')"
             @update:model-value="siteScope.setCurrent"
@@ -197,9 +195,9 @@ onMounted(() => studies.load())
             <el-option :label="t('common.allSites')" value="" />
             <el-option
               v-for="site in siteScope.sites"
-              :key="site.id"
-              :label="`${site.code} · ${site.name}`"
-              :value="site.id"
+              :key="site.name"
+              :label="site.name"
+              :value="site.name"
             />
           </el-select>
           <button v-else class="study-switcher" type="button" @click="router.push('/studies')">

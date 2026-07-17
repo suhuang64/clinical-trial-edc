@@ -5,7 +5,7 @@ export interface AuditInput {
   requestId: string
   actorUserId?: string | null | undefined
   studyId?: string | null | undefined
-  siteId?: string | null | undefined
+  siteName?: string | null | undefined
   subjectId?: string | null | undefined
   objectType: string
   objectId?: string | null | undefined
@@ -32,7 +32,7 @@ export async function writeAudit(input: AuditInput) {
       request_id: input.requestId,
       actor_user_id: input.actorUserId ?? null,
       study_id: input.studyId ?? null,
-      site_id: input.siteId ?? null,
+      site_name: input.siteName ?? null,
       subject_id: input.subjectId ?? null,
       object_type: input.objectType,
       object_id: input.objectId ?? null,

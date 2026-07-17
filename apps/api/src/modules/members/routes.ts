@@ -22,11 +22,11 @@ const memberSchema = z.object({
   displayName: z.string().trim().min(1).max(100),
   initialPassword: z.string().min(12).max(512).optional(),
   roleCode: z.enum(['study_admin', 'site_admin', 'investigator', 'readonly']),
-  siteIds: z.array(z.string().uuid()).max(100).default([]),
+  siteNames: z.array(z.string().trim().min(1).max(200)).max(100).default([]),
   overrides: z.array(overrideSchema).max(100).default([]),
 })
 const updateMemberSchema = memberSchema
-  .pick({ roleCode: true, siteIds: true, overrides: true })
+  .pick({ roleCode: true, siteNames: true, overrides: true })
   .extend({ status: z.enum(['active', 'disabled']).default('active') })
 const resetPasswordSchema = z.object({ newPassword: z.string().min(12).max(512) })
 
@@ -34,7 +34,7 @@ async function validateGrantScope(
   studyId: string,
   auth: NonNullable<Awaited<ReturnType<typeof requireStudyPermission>>>,
   roleCode: string,
-  siteIds: string[],
+  siteNames: string[],
   overrides: z.infer<typeof overrideSchema>[],
 ) {
   if (
@@ -44,20 +44,23 @@ async function validateGrantScope(
   ) {
     throw new Error('中心管理员不能授予项目管理员角色')
   }
-  if (auth.allowedSiteIds && siteIds.some((siteId) => !auth.allowedSiteIds!.includes(siteId))) {
+  if (
+    auth.allowedSiteNames &&
+    siteNames.some((siteName) => !auth.allowedSiteNames!.includes(siteName))
+  ) {
     throw new Error('不能授权当前账号作用域之外的中心')
   }
-  if (roleCode !== 'study_admin' && siteIds.length === 0)
+  if (roleCode !== 'study_admin' && siteNames.length === 0)
     throw new Error('中心级角色至少需要选择一个中心')
-  if (siteIds.length) {
+  if (siteNames.length) {
     const validSites = await db
       .selectFrom('sites')
-      .select('id')
+      .select('name')
       .where('study_id', '=', studyId)
-      .where('id', 'in', siteIds)
+      .where('name', 'in', siteNames)
       .where('status', '=', 'active')
       .execute()
-    if (validSites.length !== new Set(siteIds).size) throw new Error('包含不属于当前研究的中心')
+    if (validSites.length !== new Set(siteNames).size) throw new Error('包含不属于当前研究的中心')
   }
   if (!auth.user.isSystemAdmin && auth.membershipId && auth.roleCode) {
     const callerPermissions = await resolveMembershipPermissions(auth.membershipId, auth.roleCode)
@@ -130,7 +133,7 @@ export const memberRoutes: FastifyPluginAsync = async (app) => {
         const [sites, overrides] = await Promise.all([
           db
             .selectFrom('membership_sites')
-            .select('site_id')
+            .select('site_name')
             .where('membership_id', '=', membership.id)
             .execute(),
           db
@@ -141,7 +144,7 @@ export const memberRoutes: FastifyPluginAsync = async (app) => {
         ])
         return {
           ...membership,
-          siteIds: sites.map((site) => site.site_id),
+          siteNames: sites.map((site) => site.site_name),
           overrides: overrides.map((override) => ({
             permissionCode: override.permission_code,
             effect: override.effect,
@@ -150,10 +153,10 @@ export const memberRoutes: FastifyPluginAsync = async (app) => {
       }),
     )
     const visible =
-      auth.allowedSiteIds === null
+      auth.allowedSiteNames === null
         ? items
         : items.filter((item) =>
-            item.siteIds.some((siteId) => auth.allowedSiteIds!.includes(siteId)),
+            item.siteNames.some((siteName) => auth.allowedSiteNames!.includes(siteName)),
           )
     return { items: visible }
   })
@@ -177,7 +180,7 @@ export const memberRoutes: FastifyPluginAsync = async (app) => {
         studyId,
         auth,
         parsed.data.roleCode,
-        parsed.data.siteIds,
+        parsed.data.siteNames,
         parsed.data.overrides,
       )
     } catch (error) {
@@ -256,11 +259,14 @@ export const memberRoutes: FastifyPluginAsync = async (app) => {
           updated_at: now,
         })
         .execute()
-      if (parsed.data.siteIds.length)
+      if (parsed.data.siteNames.length)
         await trx
           .insertInto('membership_sites')
           .values(
-            parsed.data.siteIds.map((siteId) => ({ membership_id: membershipId, site_id: siteId })),
+            parsed.data.siteNames.map((siteName) => ({
+              membership_id: membershipId,
+              site_name: siteName,
+            })),
           )
           .execute()
       if (parsed.data.overrides.length)
@@ -285,7 +291,7 @@ export const memberRoutes: FastifyPluginAsync = async (app) => {
       after: {
         userId: user.id,
         roleCode: parsed.data.roleCode,
-        siteIds: parsed.data.siteIds,
+        siteNames: parsed.data.siteNames,
         overrides: parsed.data.overrides,
       },
       ipAddress: request.ip,
@@ -310,7 +316,7 @@ export const memberRoutes: FastifyPluginAsync = async (app) => {
         studyId,
         auth,
         parsed.data.roleCode,
-        parsed.data.siteIds,
+        parsed.data.siteNames,
         parsed.data.overrides,
       )
     } catch (error) {
@@ -342,11 +348,14 @@ export const memberRoutes: FastifyPluginAsync = async (app) => {
         .deleteFrom('membership_permission_overrides')
         .where('membership_id', '=', membershipId)
         .execute()
-      if (parsed.data.siteIds.length)
+      if (parsed.data.siteNames.length)
         await trx
           .insertInto('membership_sites')
           .values(
-            parsed.data.siteIds.map((siteId) => ({ membership_id: membershipId, site_id: siteId })),
+            parsed.data.siteNames.map((siteName) => ({
+              membership_id: membershipId,
+              site_name: siteName,
+            })),
           )
           .execute()
       if (parsed.data.overrides.length)

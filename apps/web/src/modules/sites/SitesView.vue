@@ -8,8 +8,6 @@ import { useStudyStore } from '@/modules/studies/study.store'
 import StatusPill from '@/components/ui/StatusPill.vue'
 
 interface SiteRow {
-  id: string
-  code: string
   name: string
   principal_investigator: string | null
   contact_name: string | null
@@ -36,13 +34,12 @@ const visits = ref<VisitRow[]>([])
 const siteDialogOpen = ref(false)
 const visitDialogOpen = ref(false)
 const saving = ref(false)
-const editingSiteId = ref('')
+const editingSiteName = ref('')
 const editingVisitId = ref('')
 const siteFormRef = ref<FormInstance>()
 const visitFormRef = ref<FormInstance>()
 const currentStudyId = computed(() => studyStore.currentStudyId)
 const siteForm = reactive({
-  code: '',
   name: '',
   principalInvestigator: '',
   contactName: '',
@@ -52,7 +49,6 @@ const siteForm = reactive({
 })
 const visitForm = reactive({ code: '', name: '', sortOrder: 0 })
 const siteRules = computed<FormRules>(() => ({
-  code: [{ required: true, message: t('sites.siteCodeRequired'), trigger: 'blur' }],
   name: [{ required: true, message: t('sites.siteNameRequired'), trigger: 'blur' }],
   contactEmail: [{ type: 'email', message: t('sites.emailInvalid'), trigger: 'blur' }],
 }))
@@ -80,9 +76,8 @@ async function load() {
 }
 
 function resetSiteForm() {
-  editingSiteId.value = ''
+  editingSiteName.value = ''
   Object.assign(siteForm, {
-    code: '',
     name: '',
     principalInvestigator: '',
     contactName: '',
@@ -99,9 +94,8 @@ function openCreateSite() {
 }
 
 function openEditSite(site: SiteRow) {
-  editingSiteId.value = site.id
+  editingSiteName.value = site.name
   Object.assign(siteForm, {
-    code: site.code,
     name: site.name,
     principalInvestigator: site.principal_investigator ?? '',
     contactName: site.contact_name ?? '',
@@ -123,14 +117,14 @@ async function saveSite() {
       contactPhone: siteForm.contactPhone.trim() || null,
       contactEmail: siteForm.contactEmail.trim() || null,
     }
-    const path = editingSiteId.value
-      ? `/studies/${currentStudyId.value}/sites/${editingSiteId.value}`
+    const path = editingSiteName.value
+      ? `/studies/${currentStudyId.value}/sites/${encodeURIComponent(editingSiteName.value)}`
       : `/studies/${currentStudyId.value}/sites`
     await apiRequest(path, {
-      method: editingSiteId.value ? 'PUT' : 'POST',
+      method: editingSiteName.value ? 'PUT' : 'POST',
       body: JSON.stringify(payload),
     })
-    ElMessage.success(editingSiteId.value ? t('sites.siteUpdated') : t('sites.siteCreated'))
+    ElMessage.success(editingSiteName.value ? t('sites.siteUpdated') : t('sites.siteCreated'))
     siteDialogOpen.value = false
     await load()
   } catch (error) {
@@ -155,10 +149,13 @@ async function toggleSite(site: SiteRow) {
   ).catch(() => null)
   if (!confirmed) return
   try {
-    await apiRequest(`/studies/${currentStudyId.value}/sites/${site.id}/status`, {
-      method: 'POST',
-      body: JSON.stringify({ status }),
-    })
+    await apiRequest(
+      `/studies/${currentStudyId.value}/sites/${encodeURIComponent(site.name)}/status`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ status }),
+      },
+    )
     ElMessage.success(t('sites.statusChanged', { action: verb }))
     await load()
   } catch (error) {
@@ -252,10 +249,9 @@ onMounted(load)
           </el-button>
         </div>
         <section v-loading="loading" class="site-grid">
-          <article v-for="site in sites" :key="site.id" class="panel site-card">
+          <article v-for="site in sites" :key="site.name" class="panel site-card">
             <header>
               <div>
-                <span class="muted-text">{{ site.code }}</span>
                 <h2>{{ site.name }}</h2>
               </div>
               <StatusPill
@@ -333,16 +329,13 @@ onMounted(load)
 
     <el-dialog
       v-model="siteDialogOpen"
-      :title="editingSiteId ? t('sites.editSite') : t('sites.addSite')"
+      :title="editingSiteName ? t('sites.editSite') : t('sites.addSite')"
       width="min(680px, calc(100vw - 32px))"
       :close-on-click-modal="false"
       @closed="resetSiteForm"
     >
       <el-form ref="siteFormRef" :model="siteForm" :rules="siteRules" label-position="top">
         <div class="form-grid">
-          <el-form-item :label="t('sites.siteCode')" prop="code" required>
-            <el-input v-model="siteForm.code" maxlength="80" />
-          </el-form-item>
           <el-form-item :label="t('sites.siteName')" prop="name" required>
             <el-input v-model="siteForm.name" maxlength="200" />
           </el-form-item>

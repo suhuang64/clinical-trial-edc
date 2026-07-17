@@ -13,12 +13,10 @@ import StatusPill from '@/components/ui/StatusPill.vue'
 
 interface SubjectRow {
   id: string
-  site_id: string
   screening_number: string
   subject_number: string | null
   random_number: string | null
   status: string
-  site_code: string
   site_name: string
   row_version: number
   screening_data_json: string
@@ -404,7 +402,7 @@ async function enrollSubject() {
 }
 
 function screeningFactorValue(key: string) {
-  if (key === 'site') return subject.value?.site_code ?? ''
+  if (key === 'site') return subject.value?.site_name ?? ''
   const value = parseScreeningValues()[key]
   if (typeof value === 'string' || typeof value === 'number') return String(value)
   if (typeof value === 'boolean') return value ? t('subjects.detail.yes') : t('subjects.detail.no')
@@ -818,7 +816,7 @@ watch(subjectId, load, { immediate: true })
       </div>
       <div>
         <span class="muted-text">{{ t('subjects.site') }}</span
-        ><strong>{{ subject.site_code }} · {{ subject.site_name }}</strong>
+        ><strong>{{ subject.site_name }}</strong>
       </div>
       <StatusPill
         :tone="statusTones[subject.status] ?? 'neutral'"
@@ -1248,7 +1246,7 @@ watch(subjectId, load, { immediate: true })
       </div>
       <div>
         <dt>{{ t('subjects.site') }}</dt>
-        <dd>{{ subject?.site_code }} · {{ subject?.site_name }}</dd>
+        <dd>{{ subject?.site_name }}</dd>
       </div>
       <div>
         <dt>{{ t('subjects.detail.randomizationScheme') }}</dt>

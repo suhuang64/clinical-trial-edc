@@ -325,36 +325,36 @@ export const randomizationRoutes: FastifyPluginAsync = async (app) => {
         .send({ code: 'VALIDATION_ERROR', message: '随机化因素不合法', requestId: request.id })
     const subjectBefore = sqlite
       .prepare(
-        `SELECT id, site_id, status, random_number FROM subjects WHERE study_id = ? AND id = ?`,
+        `SELECT id, site_name, status, random_number FROM subjects WHERE study_id = ? AND id = ?`,
       )
       .get(studyId, subjectId) as
-      { id: string; site_id: string; status: string; random_number: string | null } | undefined
+      { id: string; site_name: string; status: string; random_number: string | null } | undefined
     if (!subjectBefore)
       return reply
         .code(404)
         .send({ code: 'SUBJECT_NOT_FOUND', message: '受试者不存在', requestId: request.id })
-    if (!(await requireAllowedSite(auth, subjectBefore.site_id, request, reply))) return
+    if (!(await requireAllowedSite(auth, subjectBefore.site_name, request, reply))) return
     if (subjectBefore.random_number) {
       const existing = sqlite
         .prepare(
           `SELECT arm_id, assigned_at FROM randomization_assignments
-           WHERE study_id = ? AND site_id = ? AND subject_id = ?`,
+           WHERE study_id = ? AND site_name = ? AND subject_id = ?`,
         )
-        .get(studyId, subjectBefore.site_id, subjectId)
+        .get(studyId, subjectBefore.site_name, subjectId)
       return {
         randomNumber: subjectBefore.random_number,
         assignment: existing,
         alreadyAssigned: true,
       }
     }
-    if (!(await requireActiveSite(studyId, subjectBefore.site_id, request, reply))) return
+    if (!(await requireActiveSite(studyId, subjectBefore.site_name, request, reply))) return
 
     try {
       const transaction = sqlite.transaction(() => {
         const subject = sqlite
           .prepare(`SELECT * FROM subjects WHERE study_id = ? AND id = ?`)
           .get(studyId, subjectId) as {
-          site_id: string
+          site_name: string
           status: string
           random_number: string | null
         }
@@ -368,10 +368,10 @@ export const randomizationRoutes: FastifyPluginAsync = async (app) => {
         const arms = z.array(armSchema).parse(JSON.parse(scheme.arms_json))
         const config = schemeSchema.shape.config.parse(JSON.parse(scheme.config_json))
         const factorKeys = config.factorKeys ?? []
+        const factors = { ...parsed.data.factors }
+        if (factorKeys.includes('site')) factors.site = subject.site_name
         const stratumKey =
-          scheme.method === 'stratified_block'
-            ? canonicalStratum(factorKeys, parsed.data.factors)
-            : 'all'
+          scheme.method === 'stratified_block' ? canonicalStratum(factorKeys, factors) : 'all'
         let armId: string, decision: Record<string, unknown>
         if (scheme.method === 'simple') {
           armId = simpleRandomization(arms, scheme.seed, scheme.sequence_position)
@@ -379,7 +379,7 @@ export const randomizationRoutes: FastifyPluginAsync = async (app) => {
         } else if (scheme.method === 'permuted_block' || scheme.method === 'stratified_block') {
           ;({ armId, decision } = assignFromBlock(scheme, arms, config, stratumKey))
         } else {
-          canonicalStratum(factorKeys, parsed.data.factors)
+          canonicalStratum(factorKeys, factors)
           const previous = sqlite
             .prepare(
               `SELECT arm_id, factors_json FROM randomization_assignments
@@ -389,7 +389,7 @@ export const randomizationRoutes: FastifyPluginAsync = async (app) => {
           const result = minimizationRandomization({
             arms,
             factors: factorKeys.map((key) => ({ key, weight: config.factorWeights?.[key] ?? 1 })),
-            subjectFactors: parsed.data.factors,
+            subjectFactors: factors,
             existing: previous.map((item) => ({
               armId: item.arm_id,
               factors: JSON.parse(item.factors_json),
@@ -410,18 +410,18 @@ export const randomizationRoutes: FastifyPluginAsync = async (app) => {
           now = new Date().toISOString()
         sqlite
           .prepare(
-            `INSERT INTO randomization_assignments (id, study_id, site_id, subject_id, scheme_id, sequence_position, arm_id, stratum_key, factors_json, decision_json, assigned_by, assigned_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO randomization_assignments (id, study_id, site_name, subject_id, scheme_id, sequence_position, arm_id, stratum_key, factors_json, decision_json, assigned_by, assigned_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             assignmentId,
             studyId,
-            subject.site_id,
+            subject.site_name,
             subjectId,
             scheme.id,
             scheme.sequence_position,
             armId,
             stratumKey,
-            JSON.stringify(parsed.data.factors),
+            JSON.stringify(factors),
             JSON.stringify(decision),
             auth.user.id,
             now,
@@ -430,9 +430,9 @@ export const randomizationRoutes: FastifyPluginAsync = async (app) => {
           .prepare(
             `UPDATE subjects
              SET random_number = ?, row_version = row_version + 1, updated_at = ?
-             WHERE study_id = ? AND site_id = ? AND id = ? AND random_number IS NULL`,
+             WHERE study_id = ? AND site_name = ? AND id = ? AND random_number IS NULL`,
           )
-          .run(randomNumber, now, studyId, subject.site_id, subjectId)
+          .run(randomNumber, now, studyId, subject.site_name, subjectId)
         sqlite
           .prepare(
             `UPDATE randomization_schemes
@@ -448,7 +448,7 @@ export const randomizationRoutes: FastifyPluginAsync = async (app) => {
         requestId: request.id,
         actorUserId: auth.user.id,
         studyId,
-        siteId: subjectBefore.site_id,
+        siteName: subjectBefore.site_name,
         subjectId,
         objectType: 'randomization_assignment',
         objectId: result.assignmentId,

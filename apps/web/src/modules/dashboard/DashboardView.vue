@@ -16,20 +16,23 @@ interface DashboardData {
     completedFollowupRecords: number
   }
   sites: Array<{
-    id: string
-    code: string
     name: string
     enrollment_target: number
     enrolled: number
   }>
   enrollmentTrend: Array<{ period: string; value: number }>
   statusDistribution: Array<{ status: string; value: number }>
+  randomization: {
+    arms: Array<{ id: string; label: string }>
+    overall: { counts: Record<string, number>; total: number }
+    sites: Array<{ name: string; counts: Record<string, number>; total: number }>
+  }
   recentActivities: Array<{
     id: string
     action: string
     object_type: string
     object_id: string | null
-    site_id: string | null
+    site_name: string | null
     created_at: string
   }>
 }
@@ -111,6 +114,15 @@ const trendPoints = computed(() => {
     .join(' ')
 })
 
+const randomizationRows = computed(() => {
+  const distribution = data.value?.randomization
+  if (!distribution) return []
+  return [
+    { name: t('dashboard.randomizationOverall'), ...distribution.overall, overall: true },
+    ...distribution.sites.map((site) => ({ ...site, overall: false })),
+  ]
+})
+
 function sitePercent(site: DashboardData['sites'][number]) {
   if (!site.enrollment_target) return site.enrolled ? 100 : 0
   return Math.min(100, Math.round((site.enrolled / site.enrollment_target) * 1000) / 10)
@@ -135,8 +147,8 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const query = siteScope.currentSiteId
-      ? `?${new URLSearchParams({ siteId: siteScope.currentSiteId })}`
+    const query = siteScope.currentSiteName
+      ? `?${new URLSearchParams({ siteName: siteScope.currentSiteName })}`
       : ''
     data.value = await apiRequest<DashboardData>(
       `/studies/${studyStore.currentStudyId}/dashboard${query}`,
@@ -156,8 +168,8 @@ async function exportCsv() {
   try {
     const response = await fetch(
       `/api/v1/studies/${studyStore.currentStudyId}/dashboard/export.csv${
-        siteScope.currentSiteId
-          ? `?${new URLSearchParams({ siteId: siteScope.currentSiteId })}`
+        siteScope.currentSiteName
+          ? `?${new URLSearchParams({ siteName: siteScope.currentSiteName })}`
           : ''
       }`,
       {
@@ -182,7 +194,7 @@ async function exportCsv() {
   }
 }
 
-watch([() => studyStore.currentStudyId, () => siteScope.currentSiteId], load, { immediate: true })
+watch([() => studyStore.currentStudyId, () => siteScope.currentSiteName], load, { immediate: true })
 </script>
 
 <template>
@@ -217,6 +229,65 @@ watch([() => studyStore.currentStudyId, () => siteScope.currentSiteId], load, { 
         </article>
       </section>
 
+      <section class="panel randomization-panel" aria-labelledby="randomization-title">
+        <header class="panel-header">
+          <div>
+            <h2 id="randomization-title">{{ t('dashboard.randomizationDistribution') }}</h2>
+            <p class="muted-text">{{ t('dashboard.randomizationDistributionHint') }}</p>
+          </div>
+        </header>
+        <template v-if="data.randomization.arms.length">
+          <el-table
+            :data="randomizationRows"
+            class="randomization-table"
+            size="small"
+            :aria-label="t('dashboard.randomizationDistributionTable')"
+          >
+            <el-table-column prop="name" :label="t('dashboard.siteName')" min-width="180">
+              <template #default="{ row }">
+                <strong v-if="row.overall">{{ row.name }}</strong>
+                <span v-else>{{ row.name }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column
+              v-for="arm in data.randomization.arms"
+              :key="arm.id"
+              :label="arm.label"
+              min-width="120"
+              align="right"
+            >
+              <template #default="{ row }">{{ row.counts[arm.id] ?? 0 }}</template>
+            </el-table-column>
+            <el-table-column
+              prop="total"
+              :label="t('dashboard.total')"
+              min-width="90"
+              align="right"
+            />
+          </el-table>
+          <div class="randomization-cards">
+            <article v-for="row in randomizationRows" :key="row.name" class="randomization-card">
+              <header>
+                <strong>{{ row.name }}</strong>
+                <span>{{ t('dashboard.totalWithCount', { count: row.total }) }}</span>
+              </header>
+              <dl>
+                <div v-for="arm in data.randomization.arms" :key="arm.id">
+                  <dt>{{ arm.label }}</dt>
+                  <dd>{{ row.counts[arm.id] ?? 0 }}</dd>
+                </div>
+              </dl>
+            </article>
+          </div>
+        </template>
+        <div v-else class="empty-state">
+          <div>
+            <h3>{{ t('dashboard.noRandomizationScheme') }}</h3>
+            <p class="muted-text">{{ t('dashboard.noRandomizationSchemeHint') }}</p>
+          </div>
+        </div>
+      </section>
+
       <section class="dashboard-grid">
         <article class="panel enrollment-panel">
           <header class="panel-header">
@@ -226,9 +297,9 @@ watch([() => studyStore.currentStudyId, () => siteScope.currentSiteId], load, { 
             </div>
           </header>
           <div v-if="data.sites.length" class="site-progress-list">
-            <div v-for="site in data.sites" :key="site.id" class="site-progress-row">
+            <div v-for="site in data.sites" :key="site.name" class="site-progress-row">
               <div class="site-progress-label">
-                <strong>{{ site.code }} · {{ site.name }}</strong>
+                <strong>{{ site.name }}</strong>
                 <span
                   >{{ site.enrolled }} /
                   {{ site.enrollment_target || t('dashboard.noTarget') }}</span
@@ -260,7 +331,6 @@ watch([() => studyStore.currentStudyId, () => siteScope.currentSiteId], load, { 
             size="small"
             :aria-label="t('dashboard.siteProgressTable')"
           >
-            <el-table-column prop="code" :label="t('dashboard.siteCode')" />
             <el-table-column prop="name" :label="t('dashboard.siteName')" />
             <el-table-column prop="enrolled" :label="t('dashboard.enrolled')" />
             <el-table-column prop="enrollment_target" :label="t('dashboard.target')" />
@@ -373,6 +443,18 @@ watch([() => studyStore.currentStudyId, () => siteScope.currentSiteId], load, { 
 }
 .dashboard-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.randomization-panel {
+  margin-bottom: 16px;
+}
+.randomization-table :deep(.cell) {
+  font-variant-numeric: tabular-nums;
+}
+.randomization-cards {
+  display: none;
+}
+.activity-list {
+  padding-inline: 16px;
 }
 .panel-header {
   align-items: flex-start;
@@ -491,6 +573,42 @@ watch([() => studyStore.currentStudyId, () => siteScope.currentSiteId], load, { 
   }
   .accessible-table {
     display: none;
+  }
+  .randomization-table {
+    display: none;
+  }
+  .randomization-cards {
+    display: grid;
+    gap: 12px;
+    padding: 0 16px 16px;
+  }
+  .randomization-card {
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 12px;
+  }
+  .randomization-card header,
+  .randomization-card dl > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .randomization-card header {
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .randomization-card header span,
+  .randomization-card dt {
+    color: var(--color-text-secondary);
+  }
+  .randomization-card dl {
+    display: grid;
+    gap: 8px;
+    margin: 12px 0 0;
+  }
+  .randomization-card dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
   }
   .trend-labels {
     overflow-x: auto;

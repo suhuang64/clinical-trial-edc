@@ -3,8 +3,6 @@ import { defineStore } from 'pinia'
 import { apiRequest } from '@/api/client'
 
 export interface SiteScopeRow {
-  id: string
-  code: string
   name: string
   status: 'active' | 'disabled'
 }
@@ -16,17 +14,17 @@ function storageKey(studyId: string) {
 export const useSiteScopeStore = defineStore('site-scope', () => {
   const studyId = ref('')
   const sites = ref<SiteScopeRow[]>([])
-  const currentSiteId = ref('')
+  const currentSiteName = ref('')
   const loading = ref(false)
   const currentSite = computed(
-    () => sites.value.find((site) => site.id === currentSiteId.value) ?? null,
+    () => sites.value.find((site) => site.name === currentSiteName.value) ?? null,
   )
 
   async function load(nextStudyId: string, force = false) {
     if (!nextStudyId) {
       studyId.value = ''
       sites.value = []
-      currentSiteId.value = ''
+      currentSiteName.value = ''
       return
     }
     if (!force && studyId.value === nextStudyId && sites.value.length) return
@@ -36,19 +34,19 @@ export const useSiteScopeStore = defineStore('site-scope', () => {
       studyId.value = nextStudyId
       sites.value = response.items
       const saved = localStorage.getItem(storageKey(nextStudyId)) ?? ''
-      currentSiteId.value = sites.value.some((site) => site.id === saved) ? saved : ''
+      currentSiteName.value = sites.value.some((site) => site.name === saved) ? saved : ''
     } finally {
       loading.value = false
     }
   }
 
-  function setCurrent(siteId: string) {
-    if (siteId && !sites.value.some((site) => site.id === siteId)) return
-    currentSiteId.value = siteId
+  function setCurrent(siteName: string) {
+    if (siteName && !sites.value.some((site) => site.name === siteName)) return
+    currentSiteName.value = siteName
     if (!studyId.value) return
-    if (siteId) localStorage.setItem(storageKey(studyId.value), siteId)
+    if (siteName) localStorage.setItem(storageKey(studyId.value), siteName)
     else localStorage.removeItem(storageKey(studyId.value))
   }
 
-  return { sites, currentSiteId, currentSite, loading, load, setCurrent }
+  return { sites, currentSiteName, currentSite, loading, load, setCurrent }
 })

@@ -5,20 +5,18 @@ import { sqlite } from '../../db/database.js'
 
 const querySchema = z.object({
   query: z.string().trim().max(100).default(''),
-  siteId: z.string().uuid().optional(),
+  siteName: z.string().trim().min(1).max(200).optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(50),
 })
 
 interface SubjectRow {
   id: string
-  site_id: string
+  site_name: string
   screening_number: string
   subject_number: string | null
   random_number: string | null
   status: string
-  site_code: string
-  site_name: string
 }
 
 interface VisitRow {
@@ -51,9 +49,9 @@ export const followupRoutes: FastifyPluginAsync = async (app) => {
       })
     }
     if (
-      parsed.data.siteId &&
-      authorization.allowedSiteIds !== null &&
-      !authorization.allowedSiteIds.includes(parsed.data.siteId)
+      parsed.data.siteName &&
+      authorization.allowedSiteNames !== null &&
+      !authorization.allowedSiteNames.includes(parsed.data.siteName)
     ) {
       return reply.code(403).send({
         code: 'SITE_ACCESS_DENIED',
@@ -62,7 +60,7 @@ export const followupRoutes: FastifyPluginAsync = async (app) => {
       })
     }
 
-    const siteScope = parsed.data.siteId ? [parsed.data.siteId] : authorization.allowedSiteIds
+    const siteScope = parsed.data.siteName ? [parsed.data.siteName] : authorization.allowedSiteNames
     const where = ['s.study_id = ?', "s.status NOT IN ('screening', 'screen_failed')"]
     const params: Array<string | number> = [studyId]
     if (siteScope !== null) {
@@ -75,7 +73,7 @@ export const followupRoutes: FastifyPluginAsync = async (app) => {
           page: 1,
           pageSize: parsed.data.pageSize,
         }
-      where.push(`s.site_id IN (${siteScope.map(() => '?').join(',')})`)
+      where.push(`s.site_name IN (${siteScope.map(() => '?').join(',')})`)
       params.push(...siteScope)
     }
     if (parsed.data.query) {
@@ -90,10 +88,10 @@ export const followupRoutes: FastifyPluginAsync = async (app) => {
     const offset = (parsed.data.page - 1) * parsed.data.pageSize
     const subjects = sqlite
       .prepare(
-        `SELECT s.id, s.site_id, s.screening_number, s.subject_number, s.random_number, s.status,
-                site.code AS site_code, site.name AS site_name
+        `SELECT s.id, s.site_name, s.screening_number, s.subject_number, s.random_number, s.status,
+                site.name AS site_name
          FROM subjects s
-         JOIN sites site ON site.id = s.site_id AND site.study_id = s.study_id
+         JOIN sites site ON site.name = s.site_name AND site.study_id = s.study_id
          WHERE ${where.join(' AND ')}
          ORDER BY s.updated_at DESC, s.id
          LIMIT ? OFFSET ?`,
@@ -107,9 +105,9 @@ export const followupRoutes: FastifyPluginAsync = async (app) => {
       .all(studyId) as VisitRow[]
     const sites = sqlite
       .prepare(
-        `SELECT id, code, name FROM sites
-         WHERE study_id = ?${siteScope === null ? '' : ` AND id IN (${siteScope.map(() => '?').join(',')})`}
-         ORDER BY code`,
+        `SELECT name FROM sites
+         WHERE study_id = ?${siteScope === null ? '' : ` AND name IN (${siteScope.map(() => '?').join(',')})`}
+         ORDER BY name`,
       )
       .all(studyId, ...(siteScope ?? []))
     const expectedRows = sqlite
@@ -135,7 +133,7 @@ export const followupRoutes: FastifyPluginAsync = async (app) => {
            FROM data_records dr
            WHERE dr.study_id = ?
              AND dr.subject_id IN (${subjectIds.map(() => '?').join(',')})
-             ${siteScope === null ? '' : `AND dr.site_id IN (${siteScope.map(() => '?').join(',')})`}
+             ${siteScope === null ? '' : `AND dr.site_name IN (${siteScope.map(() => '?').join(',')})`}
              AND dr.visit_id IS NOT NULL
            GROUP BY dr.subject_id, dr.visit_id`,
         )

@@ -44,7 +44,7 @@ const createEventSchema = z
 interface SubjectRow {
   id: string
   study_id: string
-  site_id: string
+  site_name: string
   subject_number: string | null
   status: string
 }
@@ -74,14 +74,14 @@ export const subjectEventRoutes: FastifyPluginAsync = async (app) => {
     if (!auth) return
     const subject = sqlite
       .prepare(
-        'SELECT id, study_id, site_id, subject_number, status FROM subjects WHERE study_id = ? AND id = ?',
+        'SELECT id, study_id, site_name, subject_number, status FROM subjects WHERE study_id = ? AND id = ?',
       )
       .get(studyId, subjectId) as SubjectRow | undefined
     if (!subject)
       return reply
         .code(404)
         .send({ code: 'SUBJECT_NOT_FOUND', message: '受试者不存在', requestId: request.id })
-    if (!(await requireAllowedSite(auth, subject.site_id, request, reply))) return
+    if (!(await requireAllowedSite(auth, subject.site_name, request, reply))) return
     const items = sqlite
       .prepare(
         `SELECT e.*, u.display_name AS created_by_name,
@@ -91,14 +91,14 @@ export const subjectEventRoutes: FastifyPluginAsync = async (app) => {
          FROM subject_events e
          JOIN users u ON u.id = e.created_by
          LEFT JOIN data_records dr
-           ON dr.study_id = e.study_id AND dr.site_id = e.site_id
+           ON dr.study_id = e.study_id AND dr.site_name = e.site_name
           AND dr.subject_id = e.subject_id AND dr.id = e.record_id
          LEFT JOIN forms f ON f.study_id = dr.study_id AND f.id = dr.form_id
          LEFT JOIN form_versions fv ON fv.id = dr.form_version_id
-         WHERE e.study_id = ? AND e.site_id = ? AND e.subject_id = ?
+         WHERE e.study_id = ? AND e.site_name = ? AND e.subject_id = ?
          ORDER BY e.occurred_on DESC, e.created_at DESC`,
       )
-      .all(studyId, subject.site_id, subjectId)
+      .all(studyId, subject.site_name, subjectId)
     return { items }
   })
 
@@ -118,15 +118,15 @@ export const subjectEventRoutes: FastifyPluginAsync = async (app) => {
       })
     const subject = sqlite
       .prepare(
-        'SELECT id, study_id, site_id, subject_number, status FROM subjects WHERE study_id = ? AND id = ?',
+        'SELECT id, study_id, site_name, subject_number, status FROM subjects WHERE study_id = ? AND id = ?',
       )
       .get(studyId, subjectId) as SubjectRow | undefined
     if (!subject)
       return reply
         .code(404)
         .send({ code: 'SUBJECT_NOT_FOUND', message: '受试者不存在', requestId: request.id })
-    if (!(await requireAllowedSite(auth, subject.site_id, request, reply))) return
-    if (!(await requireActiveSite(studyId, subject.site_id, request, reply))) return
+    if (!(await requireAllowedSite(auth, subject.site_name, request, reply))) return
+    if (!(await requireActiveSite(studyId, subject.site_name, request, reply))) return
     if (!subject.subject_number)
       return reply.code(409).send({
         code: 'SUBJECT_NOT_ENROLLED',
@@ -148,9 +148,9 @@ export const subjectEventRoutes: FastifyPluginAsync = async (app) => {
           `SELECT dr.id, f.form_type
            FROM data_records dr
            JOIN forms f ON f.study_id = dr.study_id AND f.id = dr.form_id
-           WHERE dr.study_id = ? AND dr.site_id = ? AND dr.subject_id = ? AND dr.id = ?`,
+           WHERE dr.study_id = ? AND dr.site_name = ? AND dr.subject_id = ? AND dr.id = ?`,
         )
-        .get(studyId, subject.site_id, subjectId, parsed.data.recordId) as
+        .get(studyId, subject.site_name, subjectId, parsed.data.recordId) as
         LinkedRecordRow | undefined
       if (!linkedRecord)
         return reply.code(404).send({
@@ -180,14 +180,14 @@ export const subjectEventRoutes: FastifyPluginAsync = async (app) => {
       sqlite
         .prepare(
           `INSERT INTO subject_events
-           (id, study_id, site_id, subject_id, record_id, event_type, occurred_on, title, details,
+           (id, study_id, site_name, subject_id, record_id, event_type, occurred_on, title, details,
             before_status, after_status, created_by, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           id,
           studyId,
-          subject.site_id,
+          subject.site_name,
           subjectId,
           linkedRecord?.id ?? null,
           parsed.data.eventType,
@@ -204,16 +204,16 @@ export const subjectEventRoutes: FastifyPluginAsync = async (app) => {
           .prepare(
             `UPDATE subjects
              SET status = ?, row_version = row_version + 1, updated_at = ?
-             WHERE study_id = ? AND site_id = ? AND id = ? AND status = 'enrolled'`,
+             WHERE study_id = ? AND site_name = ? AND id = ? AND status = 'enrolled'`,
           )
-          .run(nextStatus, now, studyId, subject.site_id, subjectId)
+          .run(nextStatus, now, studyId, subject.site_name, subjectId)
       }
     })()
     await writeAudit({
       requestId: request.id,
       actorUserId: auth.user.id,
       studyId,
-      siteId: subject.site_id,
+      siteName: subject.site_name,
       subjectId,
       objectType: 'subject_event',
       objectId: id,

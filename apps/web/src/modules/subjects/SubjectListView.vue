@@ -25,15 +25,11 @@ interface SubjectRow {
   subject_number: string | null
   random_number: string | null
   status: SubjectStatus
-  site_id: string
-  site_code: string
   site_name: string
   updated_at: string
 }
 
 interface SiteRow {
-  id: string
-  code: string
   name: string
 }
 
@@ -44,7 +40,7 @@ const siteScope = useSiteScopeStore()
 const { width } = useViewport()
 const query = ref('')
 const status = ref('')
-const siteId = ref('')
+const siteName = ref('')
 const subjects = ref<SubjectRow[]>([])
 const sites = ref<SiteRow[]>([])
 const total = ref(0)
@@ -119,7 +115,7 @@ async function load() {
     const params = new URLSearchParams({ pageSize: '100' })
     if (query.value.trim()) params.set('query', query.value.trim())
     if (status.value) params.set('status', status.value)
-    if (siteId.value) params.set('siteId', siteId.value)
+    if (siteName.value) params.set('siteName', siteName.value)
     const [subjectResponse, siteResponse] = await Promise.all([
       apiRequest<{ items: SubjectRow[]; total: number }>(
         `/studies/${currentStudyId.value}/subjects?${params}`,
@@ -142,14 +138,14 @@ watch(query, () => {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(load, 300)
 })
-watch([status, siteId, currentStudyId], load)
+watch([status, siteName, currentStudyId], load)
 watch(
-  () => siteScope.currentSiteId,
+  () => siteScope.currentSiteName,
   (value) => {
-    if (siteId.value !== value) siteId.value = value
+    if (siteName.value !== value) siteName.value = value
   },
 )
-watch(siteId, (value) => siteScope.setCurrent(value))
+watch(siteName, (value) => siteScope.setCurrent(value))
 onMounted(load)
 </script>
 
@@ -178,17 +174,12 @@ onMounted(load)
         />
       </el-select>
       <el-select
-        v-model="siteId"
+        v-model="siteName"
         :aria-label="t('subjects.filterSite')"
         :placeholder="t('subjects.allSites')"
         clearable
       >
-        <el-option
-          v-for="site in sites"
-          :key="site.id"
-          :label="`${site.code} · ${site.name}`"
-          :value="site.id"
-        />
+        <el-option v-for="site in sites" :key="site.name" :label="site.name" :value="site.name" />
       </el-select>
       <span class="toolbar-spacer" />
       <el-button v-if="!isMobile" @click="router.push('/exports')">
@@ -226,7 +217,7 @@ onMounted(load)
           <template #default="{ row }">{{ row.random_number || '—' }}</template>
         </el-table-column>
         <el-table-column :label="t('subjects.site')" min-width="180">
-          <template #default="{ row }"> {{ row.site_code }} · {{ row.site_name }} </template>
+          <template #default="{ row }">{{ row.site_name }}</template>
         </el-table-column>
         <el-table-column :label="t('subjects.status')" min-width="120">
           <template #default="{ row }">
@@ -256,7 +247,7 @@ onMounted(load)
         <header>
           <div>
             <strong>{{ subject.subject_number || subject.screening_number }}</strong
-            ><small>{{ subject.screening_number }} · {{ subject.site_code }}</small>
+            ><small>{{ subject.screening_number }} · {{ subject.site_name }}</small>
           </div>
           <VanTag :type="presentation(subject).mobileType">
             {{ presentation(subject).label }}
