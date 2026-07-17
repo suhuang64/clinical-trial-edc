@@ -314,8 +314,8 @@ CREATE TABLE IF NOT EXISTS form_migration_items (
 const roles = [
   ['study_admin', '研究项目管理员', 'Study administrator'],
   ['site_admin', '中心管理员', 'Site administrator'],
-  ['investigator', '研究医生/研究护士', 'Investigator'],
-  ['readonly', '只读用户', 'Read-only user'],
+  ['investigator', '研究者', 'Investigator'],
+  ['readonly', '观察者', 'Observer'],
 ] as const
 
 const permissions = [
@@ -883,5 +883,106 @@ export function runMigrations(sqlite: Database.Database) {
     } finally {
       if (hasIntermediateSiteId && foreignKeysEnabled) sqlite.pragma('foreign_keys = ON')
     }
+  }
+  if (version < 16) {
+    sqlite.transaction(() => {
+      sqlite.exec(`
+        ALTER TABLE users ADD COLUMN birth_date TEXT;
+        ALTER TABLE users ADD COLUMN phone TEXT;
+        ALTER TABLE users ADD COLUMN email TEXT;
+        ALTER TABLE users ADD COLUMN organization TEXT;
+        ALTER TABLE users ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'approved'
+          CHECK (approval_status IN ('pending', 'approved', 'rejected'));
+        CREATE UNIQUE INDEX uq_users_phone ON users(phone) WHERE phone IS NOT NULL;
+        CREATE UNIQUE INDEX uq_users_email_nocase ON users(email COLLATE NOCASE) WHERE email IS NOT NULL;
+        CREATE UNIQUE INDEX uq_membership_single_site ON membership_sites(membership_id);
+        UPDATE roles SET name_zh = '研究者', name_en = 'Investigator'
+          WHERE code = 'investigator';
+        UPDATE roles SET name_zh = '观察者', name_en = 'Observer'
+          WHERE code = 'readonly';
+        DELETE FROM study_memberships
+          WHERE user_id IN (SELECT id FROM users WHERE is_system_admin = 1);
+        DELETE FROM role_permissions;
+      `)
+
+      const grant = sqlite.prepare(
+        'INSERT INTO role_permissions (role_code, permission_code) VALUES (?, ?)',
+      )
+      for (const [code] of permissions) grant.run('study_admin', code)
+      for (const code of [
+        'study.view',
+        'site.view',
+        'member.view',
+        'member.manage',
+        'form.view',
+        'subject.view',
+        'subject.create',
+        'subject.edit',
+        'subject.enroll',
+        'randomization.view',
+        'randomization.execute',
+        'data.view',
+        'data.create',
+        'data.edit',
+        'file.upload',
+        'file.download',
+        'dashboard.view',
+      ])
+        grant.run('site_admin', code)
+      for (const code of [
+        'study.view',
+        'site.view',
+        'form.view',
+        'subject.view',
+        'subject.create',
+        'subject.edit',
+        'subject.enroll',
+        'randomization.view',
+        'randomization.execute',
+        'data.view',
+        'data.create',
+        'data.edit',
+        'file.upload',
+        'file.download',
+        'dashboard.view',
+      ])
+        grant.run('investigator', code)
+      for (const code of [
+        'study.view',
+        'site.view',
+        'form.view',
+        'subject.view',
+        'randomization.view',
+        'data.view',
+        'file.download',
+        'dashboard.view',
+      ])
+        grant.run('readonly', code)
+
+      sqlite.exec(`
+        DELETE FROM membership_permission_overrides
+        WHERE effect != 'deny'
+           OR NOT EXISTS (
+             SELECT 1
+             FROM study_memberships membership
+             JOIN role_permissions role_permission
+               ON role_permission.role_code = membership.role_code
+              AND role_permission.permission_code = membership_permission_overrides.permission_code
+             WHERE membership.id = membership_permission_overrides.membership_id
+           );
+      `)
+      sqlite.prepare('INSERT INTO schema_migrations (version) VALUES (16)').run()
+      sqlite.pragma('user_version = 16')
+    })()
+  }
+  if (version < 17) {
+    sqlite.transaction(() => {
+      sqlite.exec(`
+        ALTER TABLE users ADD COLUMN gender TEXT
+          CHECK (gender IN ('male', 'female', 'other', 'undisclosed'));
+      `)
+      sqlite.prepare('INSERT INTO schema_migrations (version) VALUES (17)').run()
+      sqlite.pragma('user_version = 17')
+    })()
   }
 }

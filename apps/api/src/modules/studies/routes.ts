@@ -81,7 +81,20 @@ export const studyRoutes: FastifyPluginAsync = async (app) => {
       )
     if (!listQuery.data.includeArchived) query = query.where('status', '!=', 'archived')
     const items = await query.execute()
-    if (user.isSystemAdmin) return { items: items.map((study) => ({ ...study, can_manage: true })) }
+    if (user.isSystemAdmin) {
+      const permissions = (await db.selectFrom('permissions').select('code').execute()).map(
+        (permission) => permission.code,
+      )
+      return {
+        items: items.map((study) => ({
+          ...study,
+          can_manage: true,
+          role_code: null,
+          site_name: null,
+          permissions,
+        })),
+      }
+    }
     const enriched = await Promise.all(
       items.map(async (study) => {
         const membership = await db
@@ -94,7 +107,20 @@ export const studyRoutes: FastifyPluginAsync = async (app) => {
         const permissions = membership
           ? await resolveMembershipPermissions(membership.id, membership.role_code)
           : new Set<string>()
-        return { ...study, can_manage: permissions.has('study.manage') }
+        const site = membership
+          ? await db
+              .selectFrom('membership_sites')
+              .select('site_name')
+              .where('membership_id', '=', membership.id)
+              .executeTakeFirst()
+          : null
+        return {
+          ...study,
+          can_manage: permissions.has('study.manage'),
+          role_code: membership?.role_code ?? null,
+          site_name: site?.site_name ?? null,
+          permissions: [...permissions],
+        }
       }),
     )
     return { items: enriched }
@@ -137,18 +163,6 @@ export const studyRoutes: FastifyPluginAsync = async (app) => {
       updated_at: now,
     }
     await db.insertInto('studies').values(record).execute()
-    await db
-      .insertInto('study_memberships')
-      .values({
-        id: randomUUID(),
-        study_id: id,
-        user_id: user.id,
-        role_code: 'study_admin',
-        status: 'active',
-        created_at: now,
-        updated_at: now,
-      })
-      .execute()
     await writeAudit({
       requestId: request.id,
       actorUserId: user.id,

@@ -18,6 +18,39 @@ let app: FastifyInstance | undefined
 let closeDatabase: (() => Promise<void>) | undefined
 let sessionCookie = ''
 let csrfToken = ''
+let testUserSequence = 0
+
+async function createPlatformUser(
+  headers: Record<string, string>,
+  username: string,
+  displayName: string,
+  initialPassword: string,
+  profile: {
+    gender?: 'male' | 'female' | 'other' | 'undisclosed'
+    birthDate?: string
+    organization?: string
+  } = {},
+) {
+  testUserSequence += 1
+  const response = await app!.inject({
+    method: 'POST',
+    url: '/api/v1/users',
+    headers,
+    payload: {
+      username,
+      displayName,
+      gender: profile.gender ?? 'undisclosed',
+      birthDate: profile.birthDate ?? '1980-01-01',
+      phone: `+1555${String(testUserSequence).padStart(7, '0')}`,
+      email: `${username}@example.test`,
+      organization: profile.organization ?? '集成测试单位',
+      initialPassword,
+    },
+  })
+  if (response.statusCode !== 201)
+    throw new Error(`Failed to create platform user ${username}: ${response.body}`)
+  return response.json().id as string
+}
 
 async function waitForExport(studyId: string, exportId: string, headers: Record<string, string>) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -128,6 +161,86 @@ describe('API 基础能力', () => {
     })
     expect(response.statusCode).toBe(401)
     expect(response.json()).toMatchObject({ code: 'INVALID_CREDENTIALS' })
+  })
+
+  it('支持包含身份资料的注册与超级管理员审核', async () => {
+    const registration = await app!.inject({
+      method: 'POST',
+      url: '/api/v1/auth/register',
+      payload: {
+        username: 'self-registered-user',
+        displayName: '同名研究人员',
+        gender: 'female',
+        birthDate: '1988-06-15',
+        phone: '+8613800000001',
+        email: 'self-registered@example.test',
+        organization: '注册测试医院',
+        password: 'Self-Registration-Password-2026!',
+        confirmPassword: 'Self-Registration-Password-2026!',
+      },
+    })
+    expect(registration.statusCode).toBe(201)
+    expect(registration.json().approvalStatus).toBe('pending')
+    const pendingLogin = await app!.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: {
+        username: 'self-registered-user',
+        password: 'Self-Registration-Password-2026!',
+      },
+    })
+    expect(pendingLogin.statusCode).toBe(200)
+    expect(pendingLogin.json().user.approvalStatus).toBe('pending')
+    const headers = { cookie: sessionCookie, 'x-csrf-token': csrfToken }
+    const pendingUsers = await app!.inject({
+      method: 'GET',
+      url: '/api/v1/users?approvalStatus=pending',
+      headers,
+    })
+    expect(pendingUsers.json().items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: registration.json().id,
+          display_name: '同名研究人员',
+          gender: 'female',
+          birth_date: '1988-06-15',
+          phone: '+8613800000001',
+          email: 'self-registered@example.test',
+          organization: '注册测试医院',
+          approval_status: 'pending',
+        }),
+      ]),
+    )
+    const approval = await app!.inject({
+      method: 'PUT',
+      url: `/api/v1/users/${registration.json().id}/approval`,
+      headers,
+      payload: { approvalStatus: 'approved' },
+    })
+    expect(approval.statusCode).toBe(200)
+    expect(approval.json().approvalStatus).toBe('approved')
+  })
+
+  it('超级管理员可以删除未加入研究的普通账号', async () => {
+    const headers = { cookie: sessionCookie, 'x-csrf-token': csrfToken }
+    const userId = await createPlatformUser(
+      headers,
+      'deletable-user',
+      '可删除用户',
+      'Deletable-User-Password-2026!',
+    )
+    const deletion = await app!.inject({
+      method: 'DELETE',
+      url: `/api/v1/users/${userId}`,
+      headers,
+    })
+    expect(deletion.statusCode).toBe(204)
+    const deletedUser = await app!.inject({
+      method: 'GET',
+      url: '/api/v1/users?query=deletable-user',
+      headers,
+    })
+    expect(deletedUser.json().items).toHaveLength(0)
   })
 
   it('完成创建项目、中心、筛选、入组和简单随机化的垂直流程', async () => {
@@ -515,22 +628,61 @@ describe('API 基础能力', () => {
     ).toBe(1)
     expect(concurrentAssignments[0]!.json().randomNumber).toBe('RND-0002')
 
+    const investigatorUserId = await createPlatformUser(
+      headers,
+      'site-investigator',
+      '中心研究医生',
+      'Investigator-Test-Password-2026',
+      { gender: 'male', birthDate: '1981-02-03', organization: '第一测试医院' },
+    )
+    const sameNameUserId = await createPlatformUser(
+      headers,
+      'same-name-observer',
+      '中心研究医生',
+      'Same-Name-Observer-Password-2026!',
+      { gender: 'female', birthDate: '1990-04-05', organization: '第二测试医院' },
+    )
+    const sameNameCandidates = await app!.inject({
+      method: 'GET',
+      url: `/api/v1/studies/${studyId}/members/candidates?name=${encodeURIComponent('中心研究医生')}`,
+      headers,
+    })
+    expect(sameNameCandidates.statusCode).toBe(200)
+    expect(sameNameCandidates.json().items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: investigatorUserId,
+          gender: 'male',
+          organization: '第一测试医院',
+        }),
+        expect.objectContaining({
+          id: sameNameUserId,
+          gender: 'female',
+          organization: '第二测试医院',
+        }),
+      ]),
+    )
     const memberResponse = await app!.inject({
       method: 'POST',
       url: `/api/v1/studies/${studyId}/members`,
       headers,
       payload: {
-        username: 'site-investigator',
-        displayName: '中心研究医生',
-        initialPassword: 'Investigator-Test-Password-2026',
+        userId: investigatorUserId,
         roleCode: 'investigator',
-        siteNames: [siteName],
+        siteName,
         overrides: [],
       },
     })
     expect(memberResponse.statusCode).toBe(201)
     const membershipId = memberResponse.json().id as string
     const memberUserId = memberResponse.json().userId as string
+    const deleteMemberAccount = await app!.inject({
+      method: 'DELETE',
+      url: `/api/v1/users/${memberUserId}`,
+      headers,
+    })
+    expect(deleteMemberAccount.statusCode).toBe(409)
+    expect(deleteMemberAccount.json().code).toBe('USER_HAS_MEMBERSHIPS')
     const globalUsers = await app!.inject({ method: 'GET', url: '/api/v1/users', headers })
     expect(globalUsers.statusCode).toBe(200)
     expect(globalUsers.json().items).toEqual(
@@ -554,6 +706,55 @@ describe('API 基础能力', () => {
         }),
       ]),
     )
+    const projectAdminUserId = await createPlatformUser(
+      headers,
+      'project-administrator',
+      '项目管理员',
+      'Project-Administrator-Password-2026!',
+    )
+    const projectAdminMembership = await app!.inject({
+      method: 'POST',
+      url: `/api/v1/studies/${studyId}/members`,
+      headers,
+      payload: {
+        userId: projectAdminUserId,
+        roleCode: 'study_admin',
+        siteName: null,
+        overrides: [],
+      },
+    })
+    expect(projectAdminMembership.statusCode).toBe(201)
+    const projectAdminLogin = await app!.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: {
+        username: 'project-administrator',
+        password: 'Project-Administrator-Password-2026!',
+      },
+    })
+    const projectAdminHeaders = {
+      cookie: String(projectAdminLogin.headers['set-cookie']).split(';')[0]!,
+      'x-csrf-token': projectAdminLogin.json().csrfToken as string,
+    }
+    const projectAdminCatalog = await app!.inject({
+      method: 'GET',
+      url: `/api/v1/studies/${studyId}/members/permissions`,
+      headers: projectAdminHeaders,
+    })
+    expect(projectAdminCatalog.json().grantableRoleCodes).not.toContain('study_admin')
+    const forbiddenProjectAdminGrant = await app!.inject({
+      method: 'POST',
+      url: `/api/v1/studies/${studyId}/members`,
+      headers: projectAdminHeaders,
+      payload: {
+        userId: sameNameUserId,
+        roleCode: 'study_admin',
+        siteName: null,
+        overrides: [],
+      },
+    })
+    expect(forbiddenProjectAdminGrant.statusCode).toBe(403)
+    expect(forbiddenProjectAdminGrant.json().code).toBe('GRANT_SCOPE_EXCEEDED')
 
     const updateMember = await app!.inject({
       method: 'PUT',
@@ -561,7 +762,7 @@ describe('API 基础能力', () => {
       headers,
       payload: {
         roleCode: 'investigator',
-        siteNames: [siteName],
+        siteName,
         status: 'active',
         overrides: [{ permissionCode: 'subject.edit', effect: 'deny' }],
       },
@@ -749,16 +950,20 @@ describe('API 基础能力', () => {
     })
     expect(deniedExport.statusCode).toBe(403)
     expect(deniedExport.json().code).toBe('PERMISSION_DENIED')
+    const siteAdminUserId = await createPlatformUser(
+      headers,
+      'site-administrator',
+      '中心管理员',
+      'Site-Administrator-Password-2026!',
+    )
     const siteAdminMember = await app!.inject({
       method: 'POST',
       url: `/api/v1/studies/${studyId}/members`,
       headers,
       payload: {
-        username: 'site-administrator',
-        displayName: '中心管理员',
-        initialPassword: 'Site-Administrator-Password-2026!',
+        userId: siteAdminUserId,
         roleCode: 'site_admin',
-        siteNames: [siteName],
+        siteName,
         overrides: [],
       },
     })
@@ -790,13 +995,100 @@ describe('API 基础能力', () => {
     })
     expect(siteAdminSites.statusCode).toBe(200)
     expect(siteAdminSites.json().items).toEqual([expect.objectContaining({ name: siteName })])
+    const observerCandidateId = await createPlatformUser(
+      headers,
+      'observer-candidate',
+      '待分配观察者',
+      'Observer-Candidate-Password-2026!',
+      { gender: 'female', organization: '本中心医院' },
+    )
+    const forbiddenAdminCandidateId = await createPlatformUser(
+      headers,
+      'admin-candidate',
+      '待分配管理员',
+      'Admin-Candidate-Password-2026!',
+    )
+    const siteAdminCandidateSearch = await app!.inject({
+      method: 'GET',
+      url: `/api/v1/studies/${studyId}/members/candidates?name=${encodeURIComponent('待分配观察者')}`,
+      headers: siteAdminHeaders,
+    })
+    expect(siteAdminCandidateSearch.statusCode).toBe(200)
+    expect(siteAdminCandidateSearch.json().items).toEqual([
+      expect.objectContaining({ id: observerCandidateId, organization: '本中心医院' }),
+    ])
+    const observerMembership = await app!.inject({
+      method: 'POST',
+      url: `/api/v1/studies/${studyId}/members`,
+      headers: siteAdminHeaders,
+      payload: {
+        userId: observerCandidateId,
+        roleCode: 'readonly',
+        siteName,
+        overrides: [],
+      },
+    })
+    expect(observerMembership.statusCode).toBe(201)
+    const siteAdminMemberList = await app!.inject({
+      method: 'GET',
+      url: `/api/v1/studies/${studyId}/members`,
+      headers: siteAdminHeaders,
+    })
+    expect(siteAdminMemberList.statusCode).toBe(200)
+    expect(siteAdminMemberList.json().items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ role_code: 'study_admin', manageable: false }),
+        expect.objectContaining({
+          user_id: siteAdminUserId,
+          role_code: 'site_admin',
+          manageable: false,
+        }),
+        expect.objectContaining({
+          user_id: investigatorUserId,
+          role_code: 'investigator',
+          manageable: true,
+        }),
+        expect.objectContaining({
+          user_id: observerCandidateId,
+          role_code: 'readonly',
+          manageable: true,
+        }),
+      ]),
+    )
+    const forbiddenAdminGrant = await app!.inject({
+      method: 'POST',
+      url: `/api/v1/studies/${studyId}/members`,
+      headers: siteAdminHeaders,
+      payload: {
+        userId: forbiddenAdminCandidateId,
+        roleCode: 'site_admin',
+        siteName,
+        overrides: [],
+      },
+    })
+    expect(forbiddenAdminGrant.statusCode).toBe(403)
+    expect(forbiddenAdminGrant.json().code).toBe('GRANT_SCOPE_EXCEEDED')
+    const forbiddenSiteManage = await app!.inject({
+      method: 'POST',
+      url: `/api/v1/studies/${studyId}/sites`,
+      headers: siteAdminHeaders,
+      payload: { name: '中心管理员越权创建中心' },
+    })
+    expect(forbiddenSiteManage.statusCode).toBe(403)
+    const forbiddenSiteExport = await app!.inject({
+      method: 'POST',
+      url: `/api/v1/studies/${studyId}/exports`,
+      headers: siteAdminHeaders,
+      payload: { dataset: 'subjects', format: 'csv', siteName },
+    })
+    expect(forbiddenSiteExport.statusCode).toBe(403)
     const makeReadonly = await app!.inject({
       method: 'PUT',
       url: `/api/v1/studies/${studyId}/members/${siteAdminMember.json().id}`,
       headers,
       payload: {
         roleCode: 'readonly',
-        siteNames: [siteName],
+        siteName,
         overrides: [],
         status: 'active',
       },
@@ -837,7 +1129,7 @@ describe('API 基础能力', () => {
 
     const resetPassword = await app!.inject({
       method: 'POST',
-      url: `/api/v1/studies/${studyId}/members/${membershipId}/reset-password`,
+      url: `/api/v1/users/${memberUserId}/reset-password`,
       headers,
       payload: { newPassword: 'Investigator-New-Password-2026' },
     })
@@ -1771,16 +2063,20 @@ describe('API 基础能力', () => {
       expect.arrayContaining([expect.objectContaining({ code: 'FORM_VISIT_CODE_MISSING' })]),
     )
 
+    const lifecycleUserId = await createPlatformUser(
+      headers,
+      'lifecycle-member',
+      '生命周期成员',
+      'Lifecycle-Member-Password-2026!',
+    )
     const lifecycleMember = await app!.inject({
       method: 'POST',
       url: `/api/v1/studies/${studyId}/members`,
       headers,
       payload: {
-        username: 'lifecycle-member',
-        displayName: '生命周期成员',
-        initialPassword: 'Lifecycle-Member-Password-2026!',
+        userId: lifecycleUserId,
         roleCode: 'readonly',
-        siteNames: [siteName],
+        siteName,
         overrides: [],
       },
     })
@@ -1853,11 +2149,9 @@ describe('API 基础能力', () => {
         method: 'POST' as const,
         url: `/api/v1/studies/${studyId}/members`,
         payload: {
-          username: 'ended-study-user',
-          displayName: '结束后成员',
-          initialPassword: 'Ended-Study-Password-2026!',
+          userId: lifecycleUserId,
           roleCode: 'readonly',
-          siteNames: [siteName],
+          siteName,
           overrides: [],
         },
       },
@@ -1866,15 +2160,10 @@ describe('API 基础能力', () => {
         url: `/api/v1/studies/${studyId}/members/${lifecycleMembershipId}`,
         payload: {
           roleCode: 'readonly',
-          siteNames: [siteName],
+          siteName,
           overrides: [],
           status: 'active',
         },
-      },
-      {
-        method: 'POST' as const,
-        url: `/api/v1/studies/${studyId}/members/${lifecycleMembershipId}/reset-password`,
-        payload: { newPassword: 'Ended-Reset-Password-2026!' },
       },
     ]) {
       const response = await app!.inject({ ...memberWrite, headers })

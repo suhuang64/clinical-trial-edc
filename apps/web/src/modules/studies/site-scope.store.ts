@@ -48,5 +48,12 @@ export const useSiteScopeStore = defineStore('site-scope', () => {
     else localStorage.removeItem(storageKey(studyId.value))
   }
 
-  return { sites, currentSiteName, currentSite, loading, load, setCurrent }
+  function reset() {
+    studyId.value = ''
+    sites.value = []
+    currentSiteName.value = ''
+    loading.value = false
+  }
+
+  return { sites, currentSiteName, currentSite, loading, load, setCurrent, reset }
 })

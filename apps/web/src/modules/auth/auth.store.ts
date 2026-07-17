@@ -2,12 +2,15 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { apiRequest } from '@/api/client'
 import { usePreferencesStore } from '@/modules/settings/preferences.store'
+import { useSiteScopeStore } from '@/modules/studies/site-scope.store'
+import { useStudyStore } from '@/modules/studies/study.store'
 
 export interface SessionUser {
   id: string
   username: string
   displayName: string
   isSystemAdmin: boolean
+  approvalStatus: 'pending' | 'approved' | 'rejected'
   locale: 'zh-CN' | 'en-US'
   theme: 'light' | 'dark' | 'system'
 }
@@ -16,6 +19,11 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<SessionUser | null>(null)
   const initialized = ref(false)
   const authenticated = computed(() => Boolean(user.value))
+
+  function resetWorkspaceState() {
+    useStudyStore().reset()
+    useSiteScopeStore().reset()
+  }
 
   function applySession(payload: { user: SessionUser; csrfToken: string | null }) {
     user.value = payload.user
@@ -31,6 +39,7 @@ export const useAuthStore = defineStore('auth', () => {
       applySession(await apiRequest('/auth/me'))
     } catch {
       user.value = null
+      resetWorkspaceState()
       sessionStorage.removeItem('edc-csrf-token')
     } finally {
       initialized.value = true
@@ -42,6 +51,7 @@ export const useAuthStore = defineStore('auth', () => {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     })
+    resetWorkspaceState()
     applySession(payload)
     initialized.value = true
   }
@@ -51,6 +61,7 @@ export const useAuthStore = defineStore('auth', () => {
       await apiRequest('/auth/logout', { method: 'POST' })
     } finally {
       user.value = null
+      resetWorkspaceState()
       initialized.value = true
       sessionStorage.removeItem('edc-csrf-token')
     }
@@ -58,6 +69,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   function clearSession() {
     user.value = null
+    resetWorkspaceState()
     initialized.value = true
     sessionStorage.removeItem('edc-csrf-token')
   }

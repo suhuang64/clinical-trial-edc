@@ -14,7 +14,7 @@ const auth = useAuthStore()
 const preferences = usePreferencesStore()
 const { t } = useI18n()
 const loading = ref(false)
-const form = reactive({ username: 'admin', password: '' })
+const form = reactive({ username: '', password: '' })
 
 function toggleTheme() {
   preferences.setTheme(preferences.resolvedTheme === 'dark' ? 'light' : 'dark')
@@ -102,6 +102,12 @@ async function submit() {
           >
             {{ t('login.submit') }}
           </el-button>
+          <div class="register-link">
+            <span class="muted-text">{{ t('login.noAccount') }}</span>
+            <el-button link type="primary" @click="router.push('/register')">
+              {{ t('login.register') }}
+            </el-button>
+          </div>
         </el-form>
       </div>
     </main>
@@ -124,6 +130,13 @@ async function submit() {
 .login-preferences .icon-button {
   min-width: 44px;
   min-height: 44px;
+}
+.register-link {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  margin-top: 16px;
 }
 @media (max-width: 767px) {
   .login-preferences {

@@ -6,9 +6,23 @@ export interface UserTable {
   id: string
   username: string
   display_name: string
+  gender: ColumnType<
+    'male' | 'female' | 'other' | 'undisclosed' | null,
+    'male' | 'female' | 'other' | 'undisclosed' | null | undefined,
+    'male' | 'female' | 'other' | 'undisclosed' | null
+  >
+  birth_date: ColumnType<string | null, string | null | undefined, string | null>
+  phone: ColumnType<string | null, string | null | undefined, string | null>
+  email: ColumnType<string | null, string | null | undefined, string | null>
+  organization: ColumnType<string | null, string | null | undefined, string | null>
   password_hash: string
   is_system_admin: number
   status: 'active' | 'disabled' | 'locked'
+  approval_status: ColumnType<
+    'pending' | 'approved' | 'rejected',
+    'pending' | 'approved' | 'rejected' | undefined,
+    'pending' | 'approved' | 'rejected'
+  >
   failed_login_count: number
   locked_until: string | null
   locale: 'zh-CN' | 'en-US'

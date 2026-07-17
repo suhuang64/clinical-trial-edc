@@ -15,6 +15,9 @@ export interface StudySummary {
   defaultLocale: 'zh-CN' | 'en-US'
   notes: string | null
   canManage: boolean
+  roleCode: 'study_admin' | 'site_admin' | 'investigator' | 'readonly' | null
+  siteName: string | null
+  permissions: string[]
 }
 
 export interface CreateStudyInput {
@@ -42,6 +45,9 @@ interface StudyApiRow {
   default_locale: 'zh-CN' | 'en-US'
   notes: string | null
   can_manage: boolean
+  role_code: StudySummary['roleCode']
+  site_name: string | null
+  permissions: string[]
 }
 
 export const useStudyStore = defineStore('studies', () => {
@@ -73,6 +79,9 @@ export const useStudyStore = defineStore('studies', () => {
         defaultLocale: row.default_locale,
         notes: row.notes,
         canManage: row.can_manage,
+        roleCode: row.role_code,
+        siteName: row.site_name,
+        permissions: row.permissions,
       }))
       if (!studies.value.some((study) => study.id === currentStudyId.value))
         setCurrent(studies.value[0]?.id ?? '')
@@ -86,6 +95,17 @@ export const useStudyStore = defineStore('studies', () => {
     currentStudyId.value = studyId
     if (studyId) localStorage.setItem('edc-current-study', studyId)
     else localStorage.removeItem('edc-current-study')
+  }
+
+  function can(permission: string) {
+    return currentStudy.value?.permissions.includes(permission) ?? false
+  }
+
+  function reset() {
+    studies.value = []
+    loaded.value = false
+    loading.value = false
+    setCurrent('')
   }
 
   async function create(input: CreateStudyInput) {
@@ -123,6 +143,8 @@ export const useStudyStore = defineStore('studies', () => {
     loaded,
     load,
     setCurrent,
+    can,
+    reset,
     create,
     update,
     changeStatus,

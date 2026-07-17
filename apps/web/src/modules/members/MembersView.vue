@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { apiRequest, ApiClientError } from '@/api/client'
@@ -7,28 +7,39 @@ import { useStudyStore } from '@/modules/studies/study.store'
 import StatusPill from '@/components/ui/StatusPill.vue'
 
 type RoleCode = 'study_admin' | 'site_admin' | 'investigator' | 'readonly'
-type OverrideEffect = 'allow' | 'deny'
-
 interface PermissionOverride {
   permissionCode: string
-  effect: OverrideEffect
+  effect: 'deny'
 }
-
 interface MemberRow {
   id: string
   user_id: string
   username: string
   display_name: string
+  gender: 'male' | 'female' | 'other' | 'undisclosed' | null
+  birth_date: string | null
+  phone: string | null
+  email: string | null
+  organization: string | null
   role_code: RoleCode
   status: 'active' | 'disabled'
-  siteNames: string[]
+  site_name: string | null
+  manageable: boolean
   overrides: PermissionOverride[]
 }
-
+interface CandidateRow {
+  id: string
+  username: string
+  display_name: string
+  gender: 'male' | 'female' | 'other' | 'undisclosed' | null
+  birth_date: string | null
+  phone: string | null
+  email: string | null
+  organization: string | null
+}
 interface SiteRow {
   name: string
 }
-
 interface PermissionItem {
   code: string
   domain: string
@@ -40,30 +51,30 @@ interface PermissionItem {
 const studyStore = useStudyStore()
 const { t, locale } = useI18n()
 const loading = ref(false)
-const createDrawerOpen = ref(false)
-const permissionDrawerOpen = ref(false)
-const passwordDialogOpen = ref(false)
 const saving = ref(false)
 const query = ref('')
 const members = ref<MemberRow[]>([])
 const sites = ref<SiteRow[]>([])
 const permissions = ref<PermissionItem[]>([])
 const grantableRoleCodes = ref<RoleCode[]>([])
+const addDrawerOpen = ref(false)
+const permissionDrawerOpen = ref(false)
+const candidateName = ref('')
+const candidateLoading = ref(false)
+const candidates = ref<CandidateRow[]>([])
+const candidateSearched = ref(false)
 const selectedMember = ref<MemberRow | null>(null)
-const createForm = reactive({
-  username: '',
-  displayName: '',
-  initialPassword: '',
+const deniedPermissions = ref<string[]>([])
+const addForm = reactive({
+  userId: '',
   roleCode: 'investigator' as RoleCode,
-  siteNames: [] as string[],
+  siteName: '' as string,
 })
 const editForm = reactive({
   roleCode: 'investigator' as RoleCode,
-  siteNames: [] as string[],
+  siteName: '' as string,
   status: 'active' as 'active' | 'disabled',
 })
-const permissionEffects = reactive<Record<string, 'inherit' | OverrideEffect>>({})
-const passwordForm = reactive({ newPassword: '', confirmPassword: '' })
 
 const currentStudyId = computed(() => studyStore.currentStudyId)
 const roleLabels = computed<Record<RoleCode, string>>(() => ({
@@ -80,6 +91,7 @@ const domainLabels = computed<Record<string, string>>(() => ({
   subject: t('members.domains.subject'),
   randomization: t('members.domains.randomization'),
   data: t('members.domains.data'),
+  file: t('members.domains.file'),
   export: t('members.domains.export'),
   audit: t('members.domains.audit'),
   dashboard: t('members.domains.dashboard'),
@@ -88,14 +100,17 @@ const filteredMembers = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase()
   if (!keyword) return members.value
   return members.value.filter((member) =>
-    `${member.display_name} ${member.username} ${roleLabels.value[member.role_code]}`
+    `${member.display_name} ${member.username} ${roleLabels.value[member.role_code]} ${member.site_name ?? ''}`
       .toLocaleLowerCase()
       .includes(keyword),
   )
 })
+const editablePermissions = computed(() =>
+  permissions.value.filter((permission) => permission.defaultRoleCodes.includes(editForm.roleCode)),
+)
 const permissionGroups = computed(() => {
   const groups = new Map<string, PermissionItem[]>()
-  for (const permission of permissions.value) {
+  for (const permission of editablePermissions.value) {
     const items = groups.get(permission.domain) ?? []
     items.push(permission)
     groups.set(permission.domain, items)
@@ -107,18 +122,20 @@ const permissionGroups = computed(() => {
   }))
 })
 
-function siteScopeLabel(member: MemberRow) {
-  if (member.role_code === 'study_admin') return t('members.allSites')
-  return member.siteNames
-    .map((name) => sites.value.find((site) => site.name === name)?.name || name)
-    .join('、')
-}
-
-function inheritedLabel(permission: PermissionItem) {
-  return permission.defaultRoleCodes.includes(editForm.roleCode)
-    ? t('members.inheritedAllow')
-    : t('members.inheritedDeny')
-}
+watch(
+  () => editForm.roleCode,
+  () => {
+    const valid = new Set(editablePermissions.value.map((permission) => permission.code))
+    deniedPermissions.value = deniedPermissions.value.filter((code) => valid.has(code))
+    if (editForm.roleCode === 'study_admin') editForm.siteName = ''
+  },
+)
+watch(
+  () => addForm.roleCode,
+  (role) => {
+    if (role === 'study_admin') addForm.siteName = ''
+  },
+)
 
 async function load() {
   await studyStore.load()
@@ -143,46 +160,68 @@ async function load() {
   }
 }
 
-function validateRoleScope(roleCode: RoleCode, siteNames: string[]) {
-  if (roleCode !== 'study_admin' && !siteNames.length) {
+function openAddDrawer() {
+  Object.assign(addForm, {
+    userId: '',
+    roleCode: grantableRoleCodes.value.includes('investigator')
+      ? 'investigator'
+      : grantableRoleCodes.value[0],
+    siteName: studyStore.currentStudy?.siteName ?? '',
+  })
+  candidateName.value = ''
+  candidates.value = []
+  candidateSearched.value = false
+  addDrawerOpen.value = true
+}
+
+async function searchCandidates() {
+  if (!currentStudyId.value || !candidateName.value.trim()) {
+    ElMessage.warning(t('members.nameSearchRequired'))
+    return
+  }
+  candidateLoading.value = true
+  candidateSearched.value = true
+  try {
+    const params = new URLSearchParams({ name: candidateName.value.trim() })
+    const response = await apiRequest<{ items: CandidateRow[] }>(
+      `/studies/${currentStudyId.value}/members/candidates?${params}`,
+    )
+    candidates.value = response.items
+    addForm.userId = response.items.length === 1 ? response.items[0]!.id : ''
+  } catch (error) {
+    ElMessage.error(error instanceof ApiClientError ? error.message : t('members.searchFailed'))
+  } finally {
+    candidateLoading.value = false
+  }
+}
+
+function validateScope(roleCode: RoleCode, siteName: string) {
+  if (roleCode !== 'study_admin' && !siteName) {
     ElMessage.warning(t('members.siteScopeRequired'))
     return false
   }
   return true
 }
 
-async function createMember() {
-  if (!currentStudyId.value) return
-  if (!createForm.username.trim() || !createForm.displayName.trim()) {
-    ElMessage.warning(t('members.identityRequired'))
+async function addMember() {
+  if (!currentStudyId.value || !addForm.userId) {
+    ElMessage.warning(t('members.selectUserRequired'))
     return
   }
-  if (createForm.initialPassword.length < 12) {
-    ElMessage.warning(t('members.initialPasswordLength'))
-    return
-  }
-  if (!validateRoleScope(createForm.roleCode, createForm.siteNames)) return
+  if (!validateScope(addForm.roleCode, addForm.siteName)) return
   saving.value = true
   try {
     await apiRequest(`/studies/${currentStudyId.value}/members`, {
       method: 'POST',
       body: JSON.stringify({
-        ...createForm,
-        username: createForm.username.trim(),
-        displayName: createForm.displayName.trim(),
-        siteNames: createForm.roleCode === 'study_admin' ? [] : createForm.siteNames,
+        userId: addForm.userId,
+        roleCode: addForm.roleCode,
+        siteName: addForm.roleCode === 'study_admin' ? null : addForm.siteName,
         overrides: [],
       }),
     })
     ElMessage.success(t('members.created'))
-    createDrawerOpen.value = false
-    Object.assign(createForm, {
-      username: '',
-      displayName: '',
-      initialPassword: '',
-      roleCode: 'investigator',
-      siteNames: [],
-    })
+    addDrawerOpen.value = false
     await load()
   } catch (error) {
     ElMessage.error(error instanceof ApiClientError ? error.message : t('members.createFailed'))
@@ -194,35 +233,27 @@ async function createMember() {
 function openPermissions(member: MemberRow) {
   selectedMember.value = member
   editForm.roleCode = member.role_code
-  editForm.siteNames = [...member.siteNames]
+  editForm.siteName = member.site_name ?? ''
   editForm.status = member.status
-  for (const permission of permissions.value) permissionEffects[permission.code] = 'inherit'
-  for (const override of member.overrides)
-    permissionEffects[override.permissionCode] = override.effect
+  deniedPermissions.value = member.overrides.map((override) => override.permissionCode)
   permissionDrawerOpen.value = true
-}
-
-function collectOverrides() {
-  return permissions.value.flatMap((permission) => {
-    const effect = permissionEffects[permission.code]
-    return effect === 'allow' || effect === 'deny'
-      ? [{ permissionCode: permission.code, effect }]
-      : []
-  })
 }
 
 async function savePermissions() {
   if (!currentStudyId.value || !selectedMember.value) return
-  if (!validateRoleScope(editForm.roleCode, editForm.siteNames)) return
+  if (!validateScope(editForm.roleCode, editForm.siteName)) return
   saving.value = true
   try {
     await apiRequest(`/studies/${currentStudyId.value}/members/${selectedMember.value.id}`, {
       method: 'PUT',
       body: JSON.stringify({
         roleCode: editForm.roleCode,
-        siteNames: editForm.roleCode === 'study_admin' ? [] : editForm.siteNames,
+        siteName: editForm.roleCode === 'study_admin' ? null : editForm.siteName,
         status: editForm.status,
-        overrides: collectOverrides(),
+        overrides: deniedPermissions.value.map((permissionCode) => ({
+          permissionCode,
+          effect: 'deny',
+        })),
       }),
     })
     ElMessage.success(t('members.permissionsUpdated'))
@@ -249,65 +280,16 @@ async function toggleMember(member: MemberRow) {
       confirmButtonText: action,
       cancelButtonText: t('common.cancel'),
     },
-  ).then(
-    () => true,
-    () => false,
-  )
+  ).catch(() => false)
   if (!confirmed) return
-  saving.value = true
-  try {
-    await apiRequest(`/studies/${currentStudyId.value}/members/${member.id}`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        roleCode: member.role_code,
-        siteNames: member.role_code === 'study_admin' ? [] : member.siteNames,
-        status: nextStatus,
-        overrides: member.overrides,
-      }),
-    })
-    ElMessage.success(t('members.statusChanged', { action }))
-    await load()
-  } catch (error) {
-    ElMessage.error(
-      error instanceof ApiClientError ? error.message : t('members.statusChangeFailed', { action }),
-    )
-  } finally {
-    saving.value = false
-  }
-}
-
-function openPasswordDialog(member: MemberRow) {
   selectedMember.value = member
-  Object.assign(passwordForm, { newPassword: '', confirmPassword: '' })
-  passwordDialogOpen.value = true
+  editForm.roleCode = member.role_code
+  editForm.siteName = member.site_name ?? ''
+  editForm.status = nextStatus
+  deniedPermissions.value = member.overrides.map((override) => override.permissionCode)
+  await savePermissions()
 }
 
-async function resetPassword() {
-  if (!currentStudyId.value || !selectedMember.value) return
-  if (passwordForm.newPassword.length < 12) {
-    ElMessage.warning(t('members.newPasswordLength'))
-    return
-  }
-  if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-    ElMessage.warning(t('members.passwordMismatch'))
-    return
-  }
-  saving.value = true
-  try {
-    await apiRequest(
-      `/studies/${currentStudyId.value}/members/${selectedMember.value.id}/reset-password`,
-      { method: 'POST', body: JSON.stringify({ newPassword: passwordForm.newPassword }) },
-    )
-    ElMessage.success(t('members.passwordReset'))
-    passwordDialogOpen.value = false
-  } catch (error) {
-    ElMessage.error(
-      error instanceof ApiClientError ? error.message : t('members.passwordResetFailed'),
-    )
-  } finally {
-    saving.value = false
-  }
-}
 function permissionName(permission: PermissionItem) {
   return locale.value === 'en-US' ? permission.nameEn : permission.nameZh
 }
@@ -329,22 +311,34 @@ onMounted(load)
         v-model="query"
         :placeholder="t('members.searchPlaceholder')"
         clearable
-        style="max-width: 300px"
+        style="max-width: 320px"
       />
       <span class="toolbar-spacer" />
-      <el-button type="primary" @click="createDrawerOpen = true">
-        {{ t('members.addMember') }}
-      </el-button>
+      <el-button type="primary" @click="openAddDrawer">{{ t('members.addMember') }}</el-button>
     </div>
     <section v-loading="loading" class="panel">
       <el-table :data="filteredMembers" style="width: 100%">
-        <el-table-column prop="display_name" :label="t('members.name')" min-width="140" />
-        <el-table-column prop="username" :label="t('members.username')" min-width="140" />
-        <el-table-column :label="t('members.role')" min-width="180">
+        <el-table-column :label="t('members.name')" min-width="170">
+          <template #default="scope">
+            <strong>{{ scope.row.display_name }}</strong>
+            <div class="muted-text">{{ scope.row.username }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('members.identityInfo')" min-width="250">
+          <template #default="scope">
+            <div>
+              {{ scope.row.gender ? t(`members.genders.${scope.row.gender}`) : '—' }} ·
+              {{ scope.row.birth_date || '—' }}
+            </div>
+            <div class="muted-text">{{ scope.row.phone || '—' }}</div>
+            <div class="muted-text">{{ scope.row.organization || '—' }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('members.role')" min-width="160">
           <template #default="scope">{{ roleLabels[scope.row.role_code as RoleCode] }}</template>
         </el-table-column>
-        <el-table-column :label="t('members.siteScope')" min-width="220">
-          <template #default="scope">{{ siteScopeLabel(scope.row as MemberRow) }}</template>
+        <el-table-column prop="site_name" :label="t('members.siteScope')" min-width="180">
+          <template #default="scope">{{ scope.row.site_name || t('members.allSites') }}</template>
         </el-table-column>
         <el-table-column :label="t('members.permissionOverrides')" width="110">
           <template #default="scope">
@@ -359,28 +353,21 @@ onMounted(load)
             />
           </template>
         </el-table-column>
-        <el-table-column :label="t('members.actions')" fixed="right" width="220">
+        <el-table-column :label="t('members.actions')" fixed="right" width="210">
           <template #default="scope">
-            <el-button link type="primary" @click="openPermissions(scope.row as MemberRow)">
-              {{ t('members.configurePermissions') }}
-            </el-button>
-            <el-dropdown>
-              <el-button link type="primary">{{ t('members.moreActions') }}</el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item @click="openPasswordDialog(scope.row as MemberRow)">
-                    {{ t('members.resetPassword') }}
-                  </el-dropdown-item>
-                  <el-dropdown-item divided @click="toggleMember(scope.row as MemberRow)">
-                    {{
-                      scope.row.status === 'active'
-                        ? t('members.disableMember')
-                        : t('members.reenable')
-                    }}
-                  </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
+            <template v-if="scope.row.manageable">
+              <el-button link type="primary" @click="openPermissions(scope.row as MemberRow)">
+                {{ t('members.configurePermissions') }}
+              </el-button>
+              <el-button
+                link
+                :type="scope.row.status === 'active' ? 'danger' : 'primary'"
+                @click="toggleMember(scope.row as MemberRow)"
+              >
+                {{ scope.row.status === 'active' ? t('members.disable') : t('members.enable') }}
+              </el-button>
+            </template>
+            <span v-else class="muted-text">{{ t('members.viewOnly') }}</span>
           </template>
         </el-table-column>
       </el-table>
@@ -396,52 +383,101 @@ onMounted(load)
   </template>
 
   <el-drawer
-    v-model="createDrawerOpen"
+    v-model="addDrawerOpen"
     :title="t('members.addMember')"
-    size="min(480px, 92vw)"
+    size="min(680px, 96vw)"
     :close-on-click-modal="false"
   >
     <el-form label-position="top">
-      <el-form-item :label="t('members.username')" required>
-        <el-input v-model="createForm.username" autocomplete="off" maxlength="64" />
-      </el-form-item>
-      <el-form-item :label="t('members.name')" required>
-        <el-input v-model="createForm.displayName" maxlength="100" />
-      </el-form-item>
-      <el-form-item :label="t('members.initialPassword')" required>
-        <el-input
-          v-model="createForm.initialPassword"
-          type="password"
-          show-password
-          autocomplete="new-password"
-        />
-        <div class="muted-text">{{ t('members.initialPasswordHint') }}</div>
-      </el-form-item>
-      <el-form-item :label="t('members.role')" required>
-        <el-select v-model="createForm.roleCode" style="width: 100%">
-          <el-option
-            v-for="role in grantableRoleCodes"
-            :key="role"
-            :label="roleLabels[role]"
-            :value="role"
+      <el-form-item :label="t('members.searchByName')" required>
+        <div class="candidate-search">
+          <el-input
+            v-model="candidateName"
+            :placeholder="t('members.nameSearchPlaceholder')"
+            maxlength="100"
+            @keyup.enter="searchCandidates"
           />
-        </el-select>
+          <el-button type="primary" :loading="candidateLoading" @click="searchCandidates">
+            {{ t('common.search') }}
+          </el-button>
+        </div>
       </el-form-item>
-      <el-form-item
-        v-if="createForm.roleCode !== 'study_admin'"
-        :label="t('members.siteScope')"
-        required
-      >
-        <el-select v-model="createForm.siteNames" multiple filterable style="width: 100%">
-          <el-option v-for="site in sites" :key="site.name" :label="site.name" :value="site.name" />
-        </el-select>
-      </el-form-item>
-      <el-alert :title="t('members.createHint')" type="info" show-icon :closable="false" />
+      <div v-if="candidates.length" class="candidate-list" role="radiogroup">
+        <label
+          v-for="candidate in candidates"
+          :key="candidate.id"
+          class="candidate-card"
+          :class="{ selected: addForm.userId === candidate.id }"
+        >
+          <el-radio v-model="addForm.userId" :value="candidate.id">
+            <strong>{{ candidate.display_name }}</strong>
+          </el-radio>
+          <dl>
+            <div>
+              <dt>{{ t('members.gender') }}</dt>
+              <dd>{{ candidate.gender ? t(`members.genders.${candidate.gender}`) : '—' }}</dd>
+            </div>
+            <div>
+              <dt>{{ t('members.birthDate') }}</dt>
+              <dd>{{ candidate.birth_date || '—' }}</dd>
+            </div>
+            <div>
+              <dt>{{ t('members.phone') }}</dt>
+              <dd>{{ candidate.phone || '—' }}</dd>
+            </div>
+            <div>
+              <dt>{{ t('members.email') }}</dt>
+              <dd>{{ candidate.email || '—' }}</dd>
+            </div>
+            <div>
+              <dt>{{ t('members.organization') }}</dt>
+              <dd>{{ candidate.organization || '—' }}</dd>
+            </div>
+          </dl>
+        </label>
+      </div>
+      <el-empty
+        v-else-if="candidateSearched && !candidateLoading"
+        :description="t('members.noCandidates')"
+      />
+      <el-alert
+        v-else
+        :title="t('members.candidateHint')"
+        type="info"
+        show-icon
+        :closable="false"
+      />
+      <div class="member-settings-grid">
+        <el-form-item :label="t('members.role')" required>
+          <el-select v-model="addForm.roleCode" style="width: 100%">
+            <el-option
+              v-for="role in grantableRoleCodes"
+              :key="role"
+              :label="roleLabels[role]"
+              :value="role"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item
+          v-if="addForm.roleCode !== 'study_admin'"
+          :label="t('members.siteScope')"
+          required
+        >
+          <el-select v-model="addForm.siteName" style="width: 100%">
+            <el-option
+              v-for="site in sites"
+              :key="site.name"
+              :label="site.name"
+              :value="site.name"
+            />
+          </el-select>
+        </el-form-item>
+      </div>
     </el-form>
     <template #footer>
-      <el-button @click="createDrawerOpen = false">{{ t('common.cancel') }}</el-button>
-      <el-button type="primary" :loading="saving" @click="createMember">
-        {{ t('members.createMember') }}
+      <el-button @click="addDrawerOpen = false">{{ t('common.cancel') }}</el-button>
+      <el-button type="primary" :loading="saving" @click="addMember">
+        {{ t('members.addSelectedUser') }}
       </el-button>
     </template>
   </el-drawer>
@@ -449,9 +485,7 @@ onMounted(load)
   <el-drawer
     v-model="permissionDrawerOpen"
     :title="
-      selectedMember
-        ? t('members.configureTitle', { name: selectedMember.display_name })
-        : t('members.configurePermissions')
+      selectedMember ? t('members.configureTitle', { name: selectedMember.display_name }) : ''
     "
     size="min(760px, 96vw)"
     :close-on-click-modal="false"
@@ -480,32 +514,24 @@ onMounted(load)
         :label="t('members.siteScope')"
         required
       >
-        <el-select v-model="editForm.siteNames" multiple filterable style="width: 100%">
+        <el-select v-model="editForm.siteName" style="width: 100%">
           <el-option v-for="site in sites" :key="site.name" :label="site.name" :value="site.name" />
         </el-select>
       </el-form-item>
     </el-form>
-
-    <el-alert :title="t('members.overrideHint')" type="info" show-icon :closable="false" />
+    <el-alert :title="t('members.denyOnlyHint')" type="info" show-icon :closable="false" />
     <div class="permission-matrix">
       <section v-for="group in permissionGroups" :key="group.domain" class="permission-group">
         <h3>{{ group.label }}</h3>
-        <div v-for="permission in group.items" :key="permission.code" class="permission-row">
-          <div>
-            <strong>{{ permissionName(permission) }}</strong>
-            <span class="permission-code">{{ permission.code }}</span>
-          </div>
-          <el-radio-group
-            v-model="permissionEffects[permission.code]"
-            :aria-label="t('members.overrideAria', { permission: permissionName(permission) })"
-          >
-            <el-radio-button value="inherit">
-              {{ t('members.inherit', { label: inheritedLabel(permission) }) }}
-            </el-radio-button>
-            <el-radio-button value="allow">{{ t('members.explicitAllow') }}</el-radio-button>
-            <el-radio-button value="deny">{{ t('members.explicitDeny') }}</el-radio-button>
-          </el-radio-group>
-        </div>
+        <el-checkbox-group v-model="deniedPermissions">
+          <label v-for="permission in group.items" :key="permission.code" class="permission-row">
+            <div>
+              <strong>{{ permissionName(permission) }}</strong>
+              <span class="permission-code">{{ permission.code }}</span>
+            </div>
+            <el-checkbox :value="permission.code">{{ t('members.disablePermission') }}</el-checkbox>
+          </label>
+        </el-checkbox-group>
       </section>
     </div>
     <template #footer>
@@ -515,98 +541,92 @@ onMounted(load)
       </el-button>
     </template>
   </el-drawer>
-
-  <el-dialog
-    v-model="passwordDialogOpen"
-    :title="
-      selectedMember
-        ? t('members.resetTitle', { name: selectedMember.display_name })
-        : t('members.resetPassword')
-    "
-    width="min(480px, 92vw)"
-    :close-on-click-modal="false"
-  >
-    <el-alert :title="t('members.resetWarning')" type="warning" show-icon :closable="false" />
-    <el-form label-position="top" class="password-form">
-      <el-form-item :label="t('members.newPassword')" required>
-        <el-input
-          v-model="passwordForm.newPassword"
-          type="password"
-          show-password
-          autocomplete="new-password"
-        />
-      </el-form-item>
-      <el-form-item :label="t('members.confirmPassword')" required>
-        <el-input
-          v-model="passwordForm.confirmPassword"
-          type="password"
-          show-password
-          autocomplete="new-password"
-        />
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <el-button @click="passwordDialogOpen = false">{{ t('common.cancel') }}</el-button>
-      <el-button type="primary" :loading="saving" @click="resetPassword">
-        {{ t('members.confirmReset') }}
-      </el-button>
-    </template>
-  </el-dialog>
 </template>
 
 <style scoped>
 .member-settings-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  gap: 0 16px;
+  margin-top: 20px;
+}
+.candidate-search {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  width: 100%;
+}
+.candidate-list {
+  display: grid;
+  gap: 8px;
+}
+.candidate-card {
+  display: block;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.candidate-card.selected {
+  border-color: var(--color-primary);
+  background: var(--color-surface-subtle);
+}
+.candidate-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 20px;
+  margin: 10px 0 0 28px;
+}
+.candidate-card dl div {
+  min-width: 0;
+}
+.candidate-card dt {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+.candidate-card dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
 }
 .permission-matrix {
   display: grid;
-  gap: 12px;
+  gap: 16px;
   margin-top: 16px;
 }
 .permission-group {
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: var(--color-surface);
+  overflow: hidden;
 }
 .permission-group h3 {
   margin: 0;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--color-border);
+  padding: 10px 12px;
   background: var(--color-surface-subtle);
-  font-size: 15px;
+  font-size: 14px;
 }
 .permission-row {
   display: flex;
-  min-height: 56px;
-  align-items: center;
   justify-content: space-between;
+  align-items: center;
   gap: 16px;
-  padding: 8px 16px;
-}
-.permission-row + .permission-row {
+  padding: 10px 12px;
   border-top: 1px solid var(--color-border);
 }
 .permission-code {
   display: block;
+  margin-top: 2px;
   color: var(--color-text-secondary);
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
 }
-.password-form {
-  margin-top: 16px;
-}
-@media (max-width: 900px) {
+@media (max-width: 767px) {
+  .member-settings-grid,
+  .candidate-card dl {
+    grid-template-columns: 1fr;
+  }
   .permission-row {
     align-items: flex-start;
     flex-direction: column;
-  }
-}
-@media (max-width: 767px) {
-  .member-settings-grid {
-    grid-template-columns: 1fr;
-    gap: 0;
   }
 }
 </style>

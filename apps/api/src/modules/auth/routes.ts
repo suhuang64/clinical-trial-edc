@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { config } from '../../config.js'
@@ -18,6 +19,29 @@ const loginSchema = z.object({
   username: z.string().trim().min(1).max(100),
   password: z.string().min(1).max(512),
 })
+const registerSchema = z
+  .object({
+    username: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9._-]{3,64}$/),
+    displayName: z.string().trim().min(1).max(100),
+    gender: z.enum(['male', 'female', 'other', 'undisclosed']),
+    birthDate: z.iso.date(),
+    phone: z.string().trim().min(6).max(30),
+    email: z.email().max(254),
+    organization: z.string().trim().min(1).max(200),
+    password: z.string().min(12).max(512),
+    confirmPassword: z.string().min(12).max(512),
+  })
+  .refine((value) => value.password === value.confirmPassword, {
+    path: ['confirmPassword'],
+    message: '两次输入的密码不一致',
+  })
+  .refine((value) => value.birthDate <= new Date().toISOString().slice(0, 10), {
+    path: ['birthDate'],
+    message: '出生日期不能晚于今天',
+  })
 const preferenceSchema = z.object({
   locale: z.enum(['zh-CN', 'en-US']),
   theme: z.enum(['light', 'dark', 'system']),
@@ -33,6 +57,87 @@ const changePasswordSchema = z
   })
 
 export const authRoutes: FastifyPluginAsync = async (app) => {
+  app.post(
+    '/register',
+    { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      const parsed = registerSchema.safeParse(request.body)
+      if (!parsed.success)
+        return reply.code(400).send({
+          code: 'VALIDATION_ERROR',
+          message: '注册信息不完整或格式不正确',
+          details: parsed.error.flatten(),
+          requestId: request.id,
+        })
+      const phone = parsed.data.phone.replace(/[\s()-]/g, '')
+      if (!/^\+?\d{6,20}$/.test(phone))
+        return reply.code(400).send({
+          code: 'VALIDATION_ERROR',
+          message: '手机号码格式不正确',
+          requestId: request.id,
+        })
+      const email = parsed.data.email.trim().toLocaleLowerCase()
+      const duplicate = await db
+        .selectFrom('users')
+        .select(['username', 'phone', 'email'])
+        .where((builder) =>
+          builder.or([
+            builder('username', '=', parsed.data.username),
+            builder('phone', '=', phone),
+            builder('email', '=', email),
+          ]),
+        )
+        .executeTakeFirst()
+      if (duplicate)
+        return reply.code(409).send({
+          code: 'ACCOUNT_ALREADY_EXISTS',
+          message:
+            duplicate.username.toLocaleLowerCase() === parsed.data.username.toLocaleLowerCase()
+              ? '该账号已存在'
+              : duplicate.phone === phone
+                ? '该手机号码已注册'
+                : '该邮箱已注册',
+          requestId: request.id,
+        })
+      const id = randomUUID()
+      const now = new Date().toISOString()
+      await db
+        .insertInto('users')
+        .values({
+          id,
+          username: parsed.data.username,
+          display_name: parsed.data.displayName,
+          gender: parsed.data.gender,
+          birth_date: parsed.data.birthDate,
+          phone,
+          email,
+          organization: parsed.data.organization,
+          password_hash: await hashPassword(parsed.data.password),
+          is_system_admin: 0,
+          status: 'active',
+          approval_status: 'pending',
+          failed_login_count: 0,
+          locked_until: null,
+          locale: 'zh-CN',
+          theme: 'system',
+          created_at: now,
+          updated_at: now,
+        })
+        .execute()
+      await writeAudit({
+        requestId: request.id,
+        actorUserId: id,
+        objectType: 'user',
+        objectId: id,
+        action: 'user.registered',
+        after: { username: parsed.data.username, approvalStatus: 'pending' },
+        ipAddress: request.ip,
+        userAgent: request.headers['user-agent'],
+      })
+      return reply.code(201).send({ id, approvalStatus: 'pending' })
+    },
+  )
+
   app.post(
     '/login',
     { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
@@ -52,6 +157,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         .executeTakeFirst()
       const valid =
         user?.status === 'active' &&
+        user.approval_status !== 'rejected' &&
         (!user.locked_until || new Date(user.locked_until).getTime() <= Date.now()) &&
         (await verifyPassword(user.password_hash, parsed.data.password))
 
@@ -112,6 +218,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
           username: user.username,
           displayName: user.display_name,
           isSystemAdmin: user.is_system_admin === 1,
+          approvalStatus: user.approval_status,
           locale: user.locale,
           theme: user.theme,
         },

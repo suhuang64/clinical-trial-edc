@@ -45,29 +45,46 @@ const sidebarCollapsed = computed(
 const navigation = [
   { key: 'dashboard', path: '/dashboard', icon: House },
   { key: 'studies', path: '/studies', icon: FolderOpened },
-  { key: 'studySettings', path: '/study-settings', icon: Setting },
+  { key: 'studySettings', path: '/study-settings', icon: Setting, permission: 'study.manage' },
   { key: 'users', path: '/users', icon: User },
-  { key: 'subjects', path: '/subjects', icon: UserFilled },
-  { key: 'followups', path: '/followups', icon: Document },
-  { key: 'forms', path: '/forms', icon: Operation },
-  { key: 'randomization', path: '/randomization', icon: DataAnalysis },
-  { key: 'sites', path: '/sites', icon: House },
-  { key: 'members', path: '/members', icon: User },
-  { key: 'exports', path: '/exports', icon: FolderOpened },
-  { key: 'audit', path: '/audit', icon: Document },
+  { key: 'subjects', path: '/subjects', icon: UserFilled, permission: 'subject.view' },
+  { key: 'followups', path: '/followups', icon: Document, permission: 'data.view' },
+  { key: 'forms', path: '/forms', icon: Operation, permission: 'form.manage' },
+  {
+    key: 'randomization',
+    path: '/randomization',
+    icon: DataAnalysis,
+    permission: 'randomization.manage',
+  },
+  { key: 'sites', path: '/sites', icon: House, permission: 'site.manage' },
+  { key: 'members', path: '/members', icon: User, permission: 'member.view' },
+  { key: 'exports', path: '/exports', icon: FolderOpened, permission: 'export.execute' },
+  { key: 'audit', path: '/audit', icon: Document, permission: 'audit.view' },
   { key: 'settings', path: '/settings', icon: Setting },
 ]
 const desktopNavigation = computed(() =>
-  navigation.filter((item) => item.key !== 'users' || auth.user?.isSystemAdmin),
+  navigation.filter(
+    (item) =>
+      (item.key !== 'users' || auth.user?.isSystemAdmin) &&
+      (!item.permission || studies.can(item.permission)),
+  ),
 )
 
 const mobileNavigation = [
   { key: 'dashboard', path: '/dashboard', icon: House },
-  { key: 'subjects', path: '/subjects', icon: UserFilled },
-  { key: 'screening', path: '/subjects/new-screening', icon: Operation },
-  { key: 'followups', path: '/followups', icon: Document },
+  { key: 'subjects', path: '/subjects', icon: UserFilled, permission: 'subject.view' },
+  {
+    key: 'screening',
+    path: '/subjects/new-screening',
+    icon: Operation,
+    permission: 'subject.create',
+  },
+  { key: 'followups', path: '/followups', icon: Document, permission: 'data.view' },
   { key: 'mine', path: '/mine', icon: Avatar },
 ]
+const visibleMobileNavigation = computed(() =>
+  mobileNavigation.filter((item) => !item.permission || studies.can(item.permission)),
+)
 
 const activeNav = computed(() => String(route.meta.nav ?? 'dashboard'))
 const pageTitle = computed(() => t(String(route.meta.titleKey ?? 'common.appName')))
@@ -263,7 +280,7 @@ onMounted(() => studies.load())
 
     <nav v-if="isMobile" class="mobile-nav" :aria-label="t('common.mobileNavigation')">
       <button
-        v-for="item in mobileNavigation"
+        v-for="item in visibleMobileNavigation"
         :key="item.key"
         type="button"
         class="mobile-nav-item"

@@ -9,6 +9,7 @@ export interface AuthenticatedUser {
   username: string
   displayName: string
   isSystemAdmin: boolean
+  approvalStatus: 'pending' | 'approved' | 'rejected'
   locale: 'zh-CN' | 'en-US'
   theme: 'light' | 'dark' | 'system'
 }
@@ -63,6 +64,7 @@ export async function getAuthenticatedUser(
       'users.username',
       'users.display_name',
       'users.is_system_admin',
+      'users.approval_status',
       'users.locale',
       'users.theme',
       'users.status',
@@ -70,13 +72,19 @@ export async function getAuthenticatedUser(
     ])
     .where('sessions.token_hash', '=', sha256(token))
     .executeTakeFirst()
-  if (!row || row.status !== 'active' || new Date(row.expires_at).getTime() <= Date.now())
+  if (
+    !row ||
+    row.status !== 'active' ||
+    row.approval_status === 'rejected' ||
+    new Date(row.expires_at).getTime() <= Date.now()
+  )
     return null
   return {
     id: row.id,
     username: row.username,
     displayName: row.display_name,
     isSystemAdmin: row.is_system_admin === 1,
+    approvalStatus: row.approval_status,
     locale: row.locale,
     theme: row.theme,
   }

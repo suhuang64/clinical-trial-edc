@@ -47,8 +47,7 @@ export async function requireStudyPermission(
     .where('role_code', '=', membership.role_code)
     .where('permission_code', '=', permissionCode)
     .executeTakeFirst()
-  const allowed =
-    override?.effect === 'allow' || (override?.effect !== 'deny' && Boolean(roleGrant))
+  const allowed = override?.effect !== 'deny' && Boolean(roleGrant)
   if (!allowed) {
     await reply.code(403).send({
       code: 'PERMISSION_DENIED',
@@ -87,7 +86,6 @@ export async function resolveMembershipPermissions(membershipId: string, roleCod
   const permissions = new Set(roleRows.map((row) => row.permission_code))
   for (const override of overrideRows) {
     if (override.effect === 'deny') permissions.delete(override.permission_code)
-    else permissions.add(override.permission_code)
   }
   return permissions
 }
