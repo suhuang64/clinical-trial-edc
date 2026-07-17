@@ -331,31 +331,6 @@ a[href] {
   margin-bottom: 20px;
 }
 
-.page-breadcrumb {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 24px;
-  margin-bottom: 4px;
-  color: var(--color-text-secondary);
-  font-size: 13px;
-}
-
-.page-breadcrumb a {
-  color: var(--color-primary);
-  text-decoration: none;
-}
-
-.page-breadcrumb a:hover {
-  text-decoration: underline;
-}
-
-.page-breadcrumb a:focus-visible {
-  border-radius: 4px;
-  outline: 2px solid var(--color-focus);
-  outline-offset: 2px;
-}
-
 .page-heading h1 {
   margin: 2px 0 0;
   font-size: 24px;

@@ -33,6 +33,7 @@ const studies = useStudyStore()
 const siteScope = useSiteScopeStore()
 const { width, coarsePointer } = useViewport()
 const collapsed = ref(false)
+const allSitesOptionValue = '__all_sites__'
 
 const isMobile = computed(() => width.value < 768)
 const isTabletLike = computed(
@@ -86,10 +87,7 @@ const visibleMobileNavigation = computed(() =>
 
 const activeNav = computed(() => String(route.meta.nav ?? 'dashboard'))
 const pageTitle = computed(() => t(String(route.meta.titleKey ?? 'common.appName')))
-const isDashboard = computed(() => route.name === 'dashboard')
-const siteScopeLabel = computed(() =>
-  siteScope.currentSite ? siteScope.currentSite.name : t('common.allSites'),
-)
+const selectedSiteName = computed(() => siteScope.currentSiteName || allSitesOptionValue)
 
 async function savePreferences(locale = preferences.locale, theme = preferences.theme) {
   try {
@@ -108,6 +106,10 @@ async function savePreferences(locale = preferences.locale, theme = preferences.
 
 function toggleTheme() {
   void savePreferences(preferences.locale, preferences.resolvedTheme === 'dark' ? 'light' : 'dark')
+}
+
+function changeSite(value: string) {
+  siteScope.setCurrent(value === allSitesOptionValue ? '' : value)
 }
 
 async function changeStudy(studyId: string) {
@@ -202,12 +204,12 @@ onMounted(() => studies.load())
           <el-select
             v-if="studies.currentStudyId"
             class="site-select"
-            :model-value="siteScope.currentSiteName"
+            :model-value="selectedSiteName"
             :loading="siteScope.loading"
             :aria-label="t('common.switchSite')"
-            @update:model-value="siteScope.setCurrent"
+            @update:model-value="changeSite"
           >
-            <el-option :label="t('common.allSites')" value="" />
+            <el-option :label="t('common.allSites')" :value="allSitesOptionValue" />
             <el-option
               v-for="site in siteScope.sites"
               :key="site.name"
@@ -260,14 +262,8 @@ onMounted(() => studies.load())
       </header>
 
       <main id="main-content" class="page-container" tabindex="-1">
-        <nav v-if="!isMobile" class="page-breadcrumb" :aria-label="t('common.breadcrumb')">
-          <RouterLink v-if="!isDashboard" to="/dashboard">{{ t('common.home') }}</RouterLink>
-          <span v-if="!isDashboard" aria-hidden="true">/</span>
-          <span aria-current="page">{{ pageTitle }}</span>
-        </nav>
         <div class="page-heading">
           <div>
-            <p class="page-eyebrow">{{ t('common.currentSite', { site: siteScopeLabel }) }}</p>
             <h1>{{ pageTitle }}</h1>
           </div>
           <slot name="page-action" />
