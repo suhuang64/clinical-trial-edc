@@ -48,7 +48,6 @@ const navigation = [
   { key: 'studySettings', path: '/study-settings', icon: Setting, permission: 'study.manage' },
   { key: 'users', path: '/users', icon: User },
   { key: 'subjects', path: '/subjects', icon: UserFilled, permission: 'subject.view' },
-  { key: 'followups', path: '/followups', icon: Document, permission: 'data.view' },
   { key: 'forms', path: '/forms', icon: Operation, permission: 'form.manage' },
   {
     key: 'randomization',
@@ -79,7 +78,6 @@ const mobileNavigation = [
     icon: Operation,
     permission: 'subject.create',
   },
-  { key: 'followups', path: '/followups', icon: Document, permission: 'data.view' },
   { key: 'mine', path: '/mine', icon: Avatar },
 ]
 const visibleMobileNavigation = computed(() =>

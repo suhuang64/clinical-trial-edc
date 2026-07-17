@@ -71,12 +71,6 @@ const routes: RouteRecordRaw[] = [
         meta: { titleKey: 'nav.subjects', nav: 'subjects', permission: 'subject.view' },
       },
       {
-        path: 'followups',
-        name: 'followups',
-        component: () => import('@/modules/followups/FollowupWorklistView.vue'),
-        meta: { titleKey: 'nav.followups', nav: 'followups', permission: 'data.view' },
-      },
-      {
         path: 'forms',
         name: 'forms',
         component: () => import('@/modules/forms/FormListView.vue'),

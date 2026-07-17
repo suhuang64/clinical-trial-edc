@@ -1874,6 +1874,16 @@ describe('API 基础能力', () => {
       submittedCount: 2,
       status: 'completed',
     })
+    const subjectListWithCompletion = await app!.inject({
+      method: 'GET',
+      url: `/api/v1/studies/${studyId}/subjects`,
+      headers,
+    })
+    expect(subjectListWithCompletion.statusCode).toBe(200)
+    expect(
+      subjectListWithCompletion.json().items.find((item: { id: string }) => item.id === subjectId)
+        ?.completion,
+    ).toMatchObject({ expectedCount: 2, submittedCount: 2, draftCount: 0 })
     expect(followupWorklist.json().items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

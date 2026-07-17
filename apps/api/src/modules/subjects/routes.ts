@@ -30,6 +30,18 @@ const conclusionSchema = z.discriminatedUnion('conclusion', [
 ])
 const deleteSubjectSchema = z.object({ reason: z.string().trim().min(3).max(1000) })
 
+interface SubjectListRow {
+  id: string
+  status: string
+  [key: string]: unknown
+}
+
+interface SubjectCompletionRow {
+  subject_id: string
+  submitted_count: number
+  draft_count: number
+}
+
 export const subjectRoutes: FastifyPluginAsync = async (app) => {
   app.get('/', async (request, reply) => {
     const studyId = (request.params as { studyId: string }).studyId
@@ -95,7 +107,7 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
         .prepare(`SELECT COUNT(*) AS value FROM subjects s WHERE ${clauses.join(' AND ')}`)
         .get(...values) as { value: number }
     ).value
-    const items = sqlite
+    const subjectRows = sqlite
       .prepare(
         `SELECT s.*, st.name AS site_name,
                 ra.arm_id AS randomization_arm_id,
@@ -111,7 +123,52 @@ export const subjectRoutes: FastifyPluginAsync = async (app) => {
          WHERE ${clauses.join(' AND ')}
          ORDER BY s.updated_at DESC LIMIT ? OFFSET ?`,
       )
-      .all(...values, filters.pageSize, (filters.page - 1) * filters.pageSize)
+      .all(...values, filters.pageSize, (filters.page - 1) * filters.pageSize) as SubjectListRow[]
+    const expectedCount = (
+      sqlite
+        .prepare(
+          `SELECT COUNT(*) AS value
+           FROM forms f
+           LEFT JOIN form_visit_bindings fvb
+             ON fvb.form_id = f.id
+           WHERE f.study_id = ? AND f.status = 'published' AND f.form_type <> 'screening'
+             AND (f.bind_visits = 0 OR fvb.visit_id IS NOT NULL)`,
+        )
+        .get(studyId) as { value: number }
+    ).value
+    let completionRows: SubjectCompletionRow[] = []
+    if (subjectRows.length) {
+      const subjectIds = subjectRows.map((subject) => subject.id)
+      completionRows = sqlite
+        .prepare(
+          `SELECT dr.subject_id,
+                  COUNT(DISTINCT CASE WHEN dr.status = 'submitted'
+                    THEN dr.form_id || ':' || COALESCE(dr.visit_id, '') END) AS submitted_count,
+                  COUNT(DISTINCT CASE WHEN dr.status = 'draft'
+                    THEN dr.form_id || ':' || COALESCE(dr.visit_id, '') END) AS draft_count
+           FROM data_records dr
+           JOIN forms f ON f.id = dr.form_id AND f.study_id = dr.study_id
+           WHERE dr.study_id = ?
+             AND dr.subject_id IN (${subjectIds.map(() => '?').join(',')})
+             AND f.status = 'published' AND f.form_type <> 'screening'
+           GROUP BY dr.subject_id`,
+        )
+        .all(studyId, ...subjectIds) as SubjectCompletionRow[]
+    }
+    const completionBySubject = new Map(completionRows.map((row) => [row.subject_id, row] as const))
+    const items = subjectRows.map((subject) => {
+      if (subject.status === 'screening' || subject.status === 'screen_failed')
+        return { ...subject, completion: null }
+      const completion = completionBySubject.get(subject.id)
+      return {
+        ...subject,
+        completion: {
+          expectedCount,
+          submittedCount: completion?.submitted_count ?? 0,
+          draftCount: completion?.draft_count ?? 0,
+        },
+      }
+    })
     return { items, total, page: filters.page, pageSize: filters.pageSize }
   })
 

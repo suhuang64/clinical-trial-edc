@@ -21,6 +21,11 @@ interface SubjectRow {
   status: SubjectStatus
   site_name: string
   updated_at: string
+  completion: {
+    expectedCount: number
+    submittedCount: number
+    draftCount: number
+  } | null
 }
 
 interface SiteRow {
@@ -184,12 +189,20 @@ onMounted(load)
             <StatusPill :tone="presentation(row).tone" :label="presentation(row).label" />
           </template>
         </el-table-column>
+        <el-table-column :label="t('followups.completion')" width="110">
+          <template #default="{ row }">
+            <span v-if="row.completion">
+              {{ row.completion.submittedCount }} / {{ row.completion.expectedCount }}
+            </span>
+            <span v-else>—</span>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('subjects.updatedAt')" min-width="180">
           <template #default="{ row }">
             {{ new Date(row.updated_at).toLocaleString(locale) }}
           </template>
         </el-table-column>
-        <el-table-column :label="t('subjects.actions')" width="90">
+        <el-table-column :label="t('subjects.actions')" width="90" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click.stop="router.push(`/subjects/${row.id}`)">
               {{ t('subjects.view') }}
@@ -226,6 +239,13 @@ onMounted(load)
               </strong>
               <span v-else>—</span>
             </dd>
+          </div>
+          <div>
+            <dt>{{ t('followups.completion') }}</dt>
+            <dd v-if="subject.completion">
+              {{ subject.completion.submittedCount }} / {{ subject.completion.expectedCount }}
+            </dd>
+            <dd v-else>—</dd>
           </div>
           <div>
             <dt>{{ t('subjects.updatedAt') }}</dt>
