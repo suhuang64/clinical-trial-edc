@@ -543,6 +543,7 @@ onBeforeRouteLeave(async () => {
           v-model="selectedField"
           :fields="definition.fields"
           :key-locked="selectedKeyLocked"
+          :form-type="metadata.formType"
         />
       </aside>
     </section>
@@ -558,6 +559,7 @@ onBeforeRouteLeave(async () => {
       v-model="selectedField"
       :fields="definition.fields"
       :key-locked="selectedKeyLocked"
+      :form-type="metadata.formType"
     />
   </el-drawer>
 

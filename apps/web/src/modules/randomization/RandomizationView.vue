@@ -34,6 +34,21 @@ interface SimulationStratum {
   factors: Record<string, string>
   results: SimulationRow[]
 }
+interface SimulationBreakdown {
+  site: string
+  arms: Array<{
+    armId: string
+    label: string
+    total: number
+    factors: Record<string, Array<{ value: string; count: number; percent: number }>>
+  }>
+}
+interface AvailableFactor {
+  key: string
+  label: string
+  type: string
+  options: Array<{ value: string; label: string }>
+}
 
 const studyStore = useStudyStore()
 const { t } = useI18n()
@@ -45,15 +60,14 @@ const schemeStatus = ref<'none' | 'draft' | 'active' | 'frozen'>('none')
 const sequencePosition = ref(0)
 const simulation = ref<SimulationRow[]>([])
 const simulationStrata = ref<SimulationStratum[]>([])
+const simulationBreakdown = ref<SimulationBreakdown[]>([])
+const availableFactors = ref<AvailableFactor[]>([])
 const sampleSize = ref(200)
 const form = reactive({
   name: t('randomization.defaultName'),
   method: 'stratified_block' as Method,
-  arms: [
-    { id: 'A', label: '', weight: 1 },
-    { id: 'B', label: '', weight: 1 },
-  ] as Arm[],
-  blockSizes: [4, 6] as number[],
+  arms: [] as Arm[],
+  blockSizes: [4, 6, 8, 10, 12] as number[],
   factorKeys: ['site'] as string[],
   biasProbability: 0.8,
   seedMode: 'auto' as 'auto' | 'manual',
@@ -88,6 +102,12 @@ const statusTone = computed<'neutral' | 'warning' | 'success'>(() =>
       : 'neutral',
 )
 
+function factorLabel(key: string) {
+  return key === 'site'
+    ? t('randomization.factorLabels.site')
+    : (availableFactors.value.find((factor) => factor.key === key)?.label ?? key)
+}
+
 function payload() {
   return {
     name: form.name,
@@ -112,12 +132,19 @@ async function load() {
   if (!studyStore.currentStudyId) return
   loading.value = true
   try {
-    const response = await apiRequest<{ scheme: SchemeRow | null; canManage: boolean }>(
-      `/studies/${studyStore.currentStudyId}/randomization/scheme`,
-    )
+    const response = await apiRequest<{
+      scheme: SchemeRow | null
+      canManage: boolean
+      availableFactors: AvailableFactor[]
+    }>(`/studies/${studyStore.currentStudyId}/randomization/scheme`)
     canManage.value = response.canManage
+    availableFactors.value = response.availableFactors ?? []
     if (!response.scheme) {
       schemeStatus.value = 'none'
+      form.arms = []
+      form.factorKeys = ['site']
+      form.seedMode = 'auto'
+      form.seed = ''
       return
     }
     const arms = JSON.parse(response.scheme.arms_json) as Arm[]
@@ -159,6 +186,10 @@ function removeArm(index: number) {
 
 async function save(showMessage = true) {
   if (!studyStore.currentStudyId) return false
+  if (form.arms.some((arm) => !arm.label.trim())) {
+    ElMessage.error(t('randomization.armNameRequired'))
+    return false
+  }
   if (form.seedMode === 'manual' && form.seed.trim().length < 16) {
     ElMessage.error(t('randomization.seedInvalid'))
     return false
@@ -212,12 +243,17 @@ async function simulate() {
   if (!studyStore.currentStudyId) return
   simulating.value = true
   try {
-    const response = await apiRequest<{ results: SimulationRow[]; strata?: SimulationStratum[] }>(
-      `/studies/${studyStore.currentStudyId}/randomization/scheme/simulate`,
-      { method: 'POST', body: JSON.stringify({ ...payload(), sampleSize: sampleSize.value }) },
-    )
+    const response = await apiRequest<{
+      results: SimulationRow[]
+      strata?: SimulationStratum[]
+      breakdown?: SimulationBreakdown[]
+    }>(`/studies/${studyStore.currentStudyId}/randomization/scheme/simulate`, {
+      method: 'POST',
+      body: JSON.stringify({ ...payload(), sampleSize: sampleSize.value }),
+    })
     simulation.value = response.results
     simulationStrata.value = response.strata ?? []
+    simulationBreakdown.value = response.breakdown ?? []
   } catch (error) {
     ElMessage.error(
       error instanceof ApiClientError ? error.message : t('randomization.simulationFailed'),
@@ -333,8 +369,14 @@ watch(() => studyStore.currentStudyId, load, { immediate: true })
                 :label="t('randomization.factors')"
               >
                 <el-checkbox-group v-model="form.factorKeys">
-                  <el-checkbox value="site">{{ t('randomization.factorLabels.site') }}</el-checkbox
+                  <el-checkbox value="site">{{ t('randomization.factorLabels.site') }}</el-checkbox>
+                  <el-checkbox
+                    v-for="factor in availableFactors"
+                    :key="factor.key"
+                    :value="factor.key"
                   >
+                    {{ factor.label }}
+                  </el-checkbox>
                 </el-checkbox-group>
               </el-form-item>
               <el-form-item
@@ -370,7 +412,12 @@ watch(() => studyStore.currentStudyId, load, { immediate: true })
                 }}</span
                 ><span class="toolbar-spacer" /><el-button :loading="saving" @click="save()">
                   {{ t('randomization.saveDraft') }} </el-button
-                ><el-button type="primary" :loading="saving" @click="activate">
+                ><el-button
+                  type="primary"
+                  :loading="saving"
+                  :disabled="form.arms.length < 2"
+                  @click="activate"
+                >
                   {{ t('randomization.validateAndActivate') }}
                 </el-button>
               </div>
@@ -401,11 +448,7 @@ watch(() => studyStore.currentStudyId, load, { immediate: true })
                 <strong>
                   {{
                     Object.entries(stratum.factors)
-                      .map(([key, value]) =>
-                        value === 'preview'
-                          ? t(`randomization.factorLabels.${key}`)
-                          : `${t(`randomization.factorLabels.${key}`)}：${value}`,
-                      )
+                      .map(([key, value]) => `${factorLabel(key)}：${value}`)
                       .join(' / ') || t('randomization.simulationStratum')
                   }}
                 </strong>
@@ -414,13 +457,35 @@ watch(() => studyStore.currentStudyId, load, { immediate: true })
                 </span>
               </div>
             </div>
+            <div v-if="simulationBreakdown.length" class="simulation-breakdown">
+              <h3>{{ t('randomization.simulationBreakdownTitle') }}</h3>
+              <div v-for="site in simulationBreakdown" :key="site.site" class="breakdown-site">
+                <strong>{{ site.site }}</strong>
+                <div v-for="arm in site.arms" :key="arm.armId" class="breakdown-arm">
+                  <span>{{ arm.label || arm.armId }} · {{ arm.total }}</span>
+                  <small v-for="(values, key) in arm.factors" :key="key">
+                    {{ factorLabel(key) }}：
+                    {{
+                      values
+                        .map((item) => `${item.value} ${item.count} (${item.percent}%)`)
+                        .join('、') || '—'
+                    }}
+                  </small>
+                </div>
+              </div>
+            </div>
             <div v-if="!simulation.length" class="empty-state simulation-empty">
               <div>
                 <h3>{{ t('randomization.notSimulated') }}</h3>
                 <p class="muted-text">{{ t('randomization.notSimulatedHint') }}</p>
               </div>
             </div>
-            <el-button style="width: 100%" :loading="simulating" @click="simulate">
+            <el-button
+              style="width: 100%"
+              :loading="simulating"
+              :disabled="form.arms.length < 2"
+              @click="simulate"
+            >
               {{ t('randomization.runSimulation') }}
             </el-button>
           </div>
@@ -495,8 +560,38 @@ watch(() => studyStore.currentStudyId, load, { immediate: true })
   border-radius: 7px;
   background: var(--color-surface-subtle);
 }
-.stratum-card strong { width: 100%; }
-.stratum-card span { color: var(--color-text-secondary); font-size: 13px; }
+.stratum-card strong {
+  width: 100%;
+}
+.stratum-card span {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+.simulation-breakdown {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0;
+}
+.simulation-breakdown h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.breakdown-site {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: var(--color-surface-subtle);
+}
+.breakdown-arm {
+  display: grid;
+  gap: 3px;
+  padding-left: 10px;
+}
+.breakdown-arm small {
+  color: var(--color-text-secondary);
+}
 @media (max-width: 1050px) {
   .randomization-layout {
     grid-template-columns: 1fr;

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
-import type { FormField } from '@edc/contracts'
+import type { FormField, FormType } from '@edc/contracts'
 import { useI18n } from 'vue-i18n'
 
 const field = defineModel<FormField | null>({ required: true })
-const props = defineProps<{ fields: FormField[]; keyLocked: boolean }>()
+const props = defineProps<{ fields: FormField[]; keyLocked: boolean; formType: FormType }>()
 const { t } = useI18n()
 
 const optionTypes = new Set(['radio', 'checkbox', 'select', 'scale'])
@@ -116,6 +116,14 @@ function addVisibilityRule() {
         <el-checkbox v-model="field.hidden">{{ t('formDesigner.properties.hidden') }}</el-checkbox>
         <el-checkbox v-model="field.exportable">
           {{ t('formDesigner.properties.exportable') }}
+        </el-checkbox>
+        <el-checkbox
+          v-if="props.formType === 'screening'"
+          v-model="field.randomizationFactor"
+          :disabled="!['text', 'number', 'date', 'datetime', 'radio', 'select', 'switch', 'scale'].includes(field.type)"
+          @change="field.randomizationFactor && (field.required = true)"
+        >
+          {{ t('formDesigner.properties.randomizationFactor') }}
         </el-checkbox>
       </div>
 

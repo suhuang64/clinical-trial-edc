@@ -105,10 +105,8 @@ interface SubjectFileRow {
 
 interface RandomizationContext {
   name: string
-  method: string
   status: 'draft' | 'active' | 'frozen' | 'disabled'
   arms: Array<{ id: string; label: string }>
-  factorKeys: string[]
 }
 
 interface RandomizationResult {
@@ -179,7 +177,6 @@ const conclusionForm = ref<{ conclusion: 'eligible' | 'failed'; reason: string }
 })
 const randomizationDialogOpen = ref(false)
 const randomizationSaving = ref(false)
-const randomizationFactors = ref<Record<string, string>>({})
 
 const subjectId = computed(() => String(route.params.id))
 const statusLabels = computed<Record<string, string>>(() => ({
@@ -233,12 +230,6 @@ const canExecuteRandomization = computed(
     !subject.value.random_number &&
     ['active', 'frozen'].includes(randomization.value?.status ?? ''),
 )
-const randomizationFactorLabels = computed<Record<string, string>>(() => ({
-  site: t('randomization.factorLabels.site'),
-  sex: t('randomization.factorLabels.sex'),
-  age_group: t('randomization.factorLabels.ageGroup'),
-  disease_stage: t('randomization.factorLabels.diseaseStage'),
-}))
 const timelineActionLabels = computed<Record<string, string>>(() => ({
   'subject.screening_created': t('subjects.detail.timelineActions.screeningCreated'),
   'subject.screening_concluded': t('subjects.detail.timelineActions.screeningConcluded'),
@@ -408,51 +399,20 @@ async function enrollSubject() {
   }
 }
 
-function screeningFactorValue(key: string) {
-  if (key === 'site') return subject.value?.site_name ?? ''
-  const value = parseScreeningValues()[key]
-  if (typeof value === 'string' || typeof value === 'number') return String(value)
-  if (typeof value === 'boolean') return value ? t('subjects.detail.yes') : t('subjects.detail.no')
-  return ''
-}
-
 function openRandomizationDialog() {
   if (!randomization.value || !subject.value) return
-  randomizationFactors.value = Object.fromEntries(
-    randomization.value.factorKeys.map((key) => [key, screeningFactorValue(key)]),
-  )
   randomizationDialogOpen.value = true
 }
 
 async function executeRandomization() {
   if (!studyStore.currentStudyId || !subject.value || !randomization.value) return
-  const missingFactor = randomization.value.factorKeys.find(
-    (key) => !randomizationFactors.value[key]?.trim(),
-  )
-  if (missingFactor) {
-    ElMessage.warning(
-      t('subjects.detail.messages.randomizationFactorRequired', {
-        factor: randomizationFactorLabels.value[missingFactor] ?? missingFactor,
-      }),
-    )
-    requestAnimationFrame(() =>
-      document
-        .querySelector<HTMLElement>(`[data-randomization-factor="${missingFactor}"] input`)
-        ?.focus(),
-    )
-    return
-  }
   randomizationSaving.value = true
   try {
     const response = await apiRequest<RandomizationResult>(
       `/studies/${studyStore.currentStudyId}/randomization/subjects/${subjectId.value}/assign`,
       {
         method: 'POST',
-        body: JSON.stringify({
-          factors: Object.fromEntries(
-            Object.entries(randomizationFactors.value).map(([key, value]) => [key, value.trim()]),
-          ),
-        }),
+        body: JSON.stringify({ factors: {} }),
       },
     )
     const armId = response.armId ?? response.assignment?.arm_id
@@ -1342,24 +1302,6 @@ watch(subjectId, load, { immediate: true })
         <dd>{{ randomization?.name }}</dd>
       </div>
     </dl>
-    <el-form v-if="randomization?.factorKeys.length" label-position="top" @submit.prevent>
-      <el-form-item
-        v-for="key in randomization.factorKeys"
-        :key="key"
-        :label="randomizationFactorLabels[key] ?? key"
-        required
-      >
-        <el-input
-          v-model="randomizationFactors[key]"
-          :data-randomization-factor="key"
-          :readonly="key === 'site'"
-          maxlength="200"
-        />
-        <p v-if="key !== 'site'" class="form-help">
-          {{ t('subjects.detail.randomizationFactorHelp') }}
-        </p>
-      </el-form-item>
-    </el-form>
     <template #footer>
       <el-button :disabled="randomizationSaving" @click="randomizationDialogOpen = false">
         {{ t('subjects.detail.cancel') }}

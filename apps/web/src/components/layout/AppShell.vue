@@ -51,12 +51,17 @@ const navigation = [
   { key: 'subjects', path: '/subjects', icon: UserFilled, permission: 'subject.view' },
   { key: 'forms', path: '/forms', icon: Operation, permission: 'form.manage' },
   {
+    key: 'sites',
+    path: '/sites',
+    icon: House,
+    permission: 'site.manage',
+  },
+  {
     key: 'randomization',
     path: '/randomization',
     icon: DataAnalysis,
     permission: 'randomization.manage',
   },
-  { key: 'sites', path: '/sites', icon: House, permission: 'site.manage' },
   { key: 'visits', path: '/visits', icon: Document, permission: 'site.manage' },
   { key: 'members', path: '/members', icon: User, permission: 'member.view' },
   { key: 'exports', path: '/exports', icon: FolderOpened, permission: 'export.execute' },
@@ -89,6 +94,33 @@ const visibleMobileNavigation = computed(() =>
 const activeNav = computed(() => String(route.meta.nav ?? 'dashboard'))
 const pageTitle = computed(() => t(String(route.meta.titleKey ?? 'common.appName')))
 const selectedSiteId = computed(() => siteScope.currentSiteId || allSitesOptionValue)
+
+async function navigate(item: (typeof navigation)[number]) {
+  if (item.key === 'randomization' && studies.currentStudyId) {
+    try {
+      const [sites, forms] = await Promise.all([
+        apiRequest<{ items: Array<{ status: string }> }>(
+          `/studies/${studies.currentStudyId}/sites`,
+        ),
+        apiRequest<{ items: Array<{ form_type: string }> }>(
+          `/studies/${studies.currentStudyId}/forms`,
+        ),
+      ])
+      if (!sites.items.some((site) => site.status === 'active')) {
+        ElMessage.warning(t('common.randomizationNeedsSite'))
+        return
+      }
+      if (!forms.items.some((form) => form.form_type === 'screening')) {
+        ElMessage.warning(t('common.randomizationNeedsScreeningForm'))
+        return
+      }
+    } catch (error) {
+      ElMessage.error(error instanceof ApiClientError ? error.message : t('common.loadFailed'))
+      return
+    }
+  }
+  await router.push(item.path)
+}
 
 async function savePreferences(locale = preferences.locale, theme = preferences.theme) {
   try {
@@ -168,6 +200,7 @@ onMounted(() => studies.load())
           class="nav-item"
           :class="{ active: activeNav === item.key }"
           :aria-label="t(`nav.${item.key}`)"
+          @click.prevent="navigate(item)"
         >
           <el-icon><component :is="item.icon" /></el-icon>
           <span v-if="!sidebarCollapsed">{{ t(`nav.${item.key}`) }}</span>

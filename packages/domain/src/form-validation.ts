@@ -9,6 +9,16 @@ export interface FormValidationIssue {
 
 const optionTypes = new Set<FieldType>(['radio', 'checkbox', 'select', 'scale'])
 const calculationSourceTypes = new Set<FieldType>(['number', 'date', 'datetime', 'calculated'])
+const randomizationFactorTypes = new Set<FieldType>([
+  'text',
+  'number',
+  'date',
+  'datetime',
+  'radio',
+  'select',
+  'switch',
+  'scale',
+])
 const compatibleConversions = new Set([
   'text:textarea',
   'textarea:text',
@@ -92,6 +102,24 @@ export function validateFormDefinition(definition: FormDefinition): FormValidati
   }
 
   for (const field of definition.fields) {
+    if (field.randomizationFactor) {
+      if (!randomizationFactorTypes.has(field.type)) {
+        issues.push({
+          code: 'RANDOMIZATION_FACTOR_TYPE_UNSUPPORTED',
+          message: `字段类型 ${field.type} 不能作为随机化因素`,
+          fieldKey: field.key,
+          severity: 'error',
+        })
+      }
+      if (!field.required || field.hidden || field.readOnly) {
+        issues.push({
+          code: 'RANDOMIZATION_FACTOR_MUST_BE_REQUIRED',
+          message: '纳入随机化的字段必须是可见且必填的录入字段',
+          fieldKey: field.key,
+          severity: 'error',
+        })
+      }
+    }
     if (optionTypes.has(field.type)) {
       if (!field.options.length) {
         issues.push({

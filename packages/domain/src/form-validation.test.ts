@@ -21,6 +21,7 @@ function numberField(key: string): FormDefinition['fields'][number] {
     readOnly: false,
     hidden: false,
     exportable: true,
+    randomizationFactor: false,
     options: [],
     validation: {},
   }

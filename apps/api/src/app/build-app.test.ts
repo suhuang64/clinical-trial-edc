@@ -573,7 +573,7 @@ describe('API 基础能力', () => {
     expect(randomizationContext.statusCode).toBe(200)
     expect(randomizationContext.json()).toMatchObject({
       capabilities: { randomize: true },
-      randomization: { status: 'active', factorKeys: [] },
+      randomization: { status: 'active' },
     })
 
     const assignmentResponse = await app!.inject({

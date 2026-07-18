@@ -364,15 +364,13 @@ export const recordRoutes: FastifyPluginAsync = async (app) => {
     const randomizationScheme = canRandomize
       ? (sqlite
           .prepare(
-            `SELECT name, method, arms_json, config_json, status
+            `SELECT name, arms_json, status
              FROM randomization_schemes WHERE study_id = ?`,
           )
           .get(subject.study_id) as
           | {
               name: string
-              method: string
               arms_json: string
-              config_json: string
               status: string
             }
           | undefined)
@@ -411,7 +409,6 @@ export const recordRoutes: FastifyPluginAsync = async (app) => {
       randomization: randomizationScheme
         ? {
             name: randomizationScheme.name,
-            method: randomizationScheme.method,
             status: randomizationScheme.status,
             arms: (
               JSON.parse(randomizationScheme.arms_json) as Array<{
@@ -419,9 +416,6 @@ export const recordRoutes: FastifyPluginAsync = async (app) => {
                 label: string
               }>
             ).map(({ id, label }) => ({ id, label })),
-            factorKeys:
-              (JSON.parse(randomizationScheme.config_json) as { factorKeys?: string[] })
-                .factorKeys ?? [],
           }
         : null,
       capabilities: {

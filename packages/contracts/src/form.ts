@@ -93,6 +93,7 @@ export const formFieldSchema = z.object({
   readOnly: z.boolean().default(false),
   hidden: z.boolean().default(false),
   exportable: z.boolean().default(true),
+  randomizationFactor: z.boolean().default(false),
   options: z.array(fieldOptionSchema).max(200).default([]),
   validation: fieldValidationSchema.default({}),
   visibility: conditionGroupSchema.optional(),

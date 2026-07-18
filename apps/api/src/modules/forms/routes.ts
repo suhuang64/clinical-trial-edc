@@ -454,6 +454,7 @@ async function readFormWorkbook(buffer: Buffer) {
       readOnly: excelBoolean(fieldText(row, 'readOnly')),
       hidden: excelBoolean(fieldText(row, 'hidden')),
       exportable: excelBoolean(fieldText(row, 'exportable'), true),
+      randomizationFactor: excelBoolean(fieldText(row, 'randomizationFactor')),
       ...(defaultValue
         ? { defaultValue: parseExcelJson(defaultValue, undefined, `字段 ${key} 的默认值`) }
         : {}),
@@ -552,6 +553,7 @@ async function buildFormWorkbook(
     'readOnly',
     'hidden',
     'exportable',
+    'randomizationFactor',
     'defaultValueJSON',
     'optionsJSON',
     'validationJSON',
@@ -583,6 +585,7 @@ async function buildFormWorkbook(
       readOnly: Boolean(field.readOnly),
       hidden: Boolean(field.hidden),
       exportable: field.exportable !== false,
+      randomizationFactor: Boolean(field.randomizationFactor),
       defaultValueJSON: field.defaultValue === undefined ? '' : JSON.stringify(field.defaultValue),
       optionsJSON: JSON.stringify(field.options ?? []),
       validationJSON: JSON.stringify(field.validation ?? {}),
@@ -827,6 +830,17 @@ export const formRoutes: FastifyPluginAsync = async (app) => {
       return reply
         .code(400)
         .send({ code: 'FORM_VISIT_INVALID', message: visitError, requestId: request.id })
+    if (parsed.data.formType === 'screening') {
+      const screeningDuplicate = sqlite
+        .prepare(`SELECT id FROM forms WHERE study_id = ? AND form_type = 'screening'`)
+        .get(studyId)
+      if (screeningDuplicate)
+        return reply.code(409).send({
+          code: 'SCREENING_FORM_EXISTS',
+          message: '每个研究只能设计一份筛选表单',
+          requestId: request.id,
+        })
+    }
     const duplicate = sqlite
       .prepare('SELECT id FROM forms WHERE study_id = ? AND code = ?')
       .get(studyId, parsed.data.code)
@@ -1384,6 +1398,17 @@ export const formRoutes: FastifyPluginAsync = async (app) => {
       return reply
         .code(404)
         .send({ code: 'FORM_NOT_FOUND', message: '源表单不存在', requestId: request.id })
+    if (source.form_type === 'screening') {
+      const screeningDuplicate = sqlite
+        .prepare(`SELECT id FROM forms WHERE study_id = ? AND form_type = 'screening'`)
+        .get(studyId)
+      if (screeningDuplicate)
+        return reply.code(409).send({
+          code: 'SCREENING_FORM_EXISTS',
+          message: '每个研究只能设计一份筛选表单',
+          requestId: request.id,
+        })
+    }
     if (
       sqlite
         .prepare('SELECT id FROM forms WHERE study_id = ? AND code = ?')
