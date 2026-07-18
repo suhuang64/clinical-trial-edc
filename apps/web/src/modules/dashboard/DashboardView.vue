@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
 import { apiRequest, ApiClientError } from '@/api/client'
 import { useStudyStore } from '@/modules/studies/study.store'
 import { useSiteScopeStore } from '@/modules/studies/site-scope.store'
@@ -41,7 +40,6 @@ const studyStore = useStudyStore()
 const siteScope = useSiteScopeStore()
 const { t, locale } = useI18n()
 const loading = ref(false)
-const exporting = ref(false)
 const error = ref('')
 const data = ref<DashboardData | null>(null)
 
@@ -162,38 +160,6 @@ async function load() {
   }
 }
 
-async function exportCsv() {
-  if (!studyStore.currentStudyId) return
-  exporting.value = true
-  try {
-    const response = await fetch(
-      `/api/v1/studies/${studyStore.currentStudyId}/dashboard/export.csv${
-        siteScope.currentSiteId
-          ? `?${new URLSearchParams({ siteId: siteScope.currentSiteId })}`
-          : ''
-      }`,
-      {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'X-CSRF-Token': sessionStorage.getItem('edc-csrf-token') ?? '' },
-      },
-    )
-    if (!response.ok) throw new Error(t('dashboard.exportFailed'))
-    const blob = await response.blob()
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `dashboard-${studyStore.currentStudyId}.csv`
-    link.click()
-    URL.revokeObjectURL(url)
-    ElMessage.success(t('dashboard.exported'))
-  } catch {
-    ElMessage.error(t('dashboard.exportFailed'))
-  } finally {
-    exporting.value = false
-  }
-}
-
 watch([() => studyStore.currentStudyId, () => siteScope.currentSiteId], load, { immediate: true })
 </script>
 
@@ -216,11 +182,6 @@ watch([() => studyStore.currentStudyId, () => siteScope.currentSiteId], load, { 
     </el-result>
 
     <template v-else-if="data">
-      <div class="dashboard-toolbar desktop-export-action">
-        <el-button :loading="exporting" @click="exportCsv">
-          {{ t('dashboard.exportCsv') }}
-        </el-button>
-      </div>
       <section class="metric-grid" :aria-label="t('dashboard.keyMetrics')">
         <article v-for="metric in metrics" :key="metric.label" class="metric-card panel">
           <div class="metric-label">{{ metric.label }}</div>

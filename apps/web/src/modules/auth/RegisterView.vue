@@ -70,7 +70,7 @@ async function submit() {
 <template>
   <main class="register-page">
     <section class="register-card panel">
-      <div class="brand"><span class="brand-mark">C</span><span>Clinical Trial EDC</span></div>
+      <div class="brand"><span class="brand-mark">O</span><span>OpenEDC</span></div>
       <p class="page-eyebrow">{{ t('register.eyebrow') }}</p>
       <h1>{{ t('register.title') }}</h1>
       <p class="muted-text">{{ t('register.hint') }}</p>

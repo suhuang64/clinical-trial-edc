@@ -21,7 +21,7 @@ import { numberingRepository, sqlite } from '../../db/database.js'
 
 const armSchema = z.object({
   id: z.string().regex(/^[A-Za-z0-9_-]{1,32}$/),
-  label: z.string().min(1).max(100),
+  label: z.string().max(100),
   weight: z.number().int().positive(),
 })
 const schemeSchema = z.object({
@@ -71,6 +71,35 @@ function validateScheme(data: z.infer<typeof schemeSchema>) {
     !data.config.factorKeys?.length
   )
     throw new Error('该随机化方法至少需要一个分层因素')
+}
+
+function proportionalPreviewResults(
+  arms: Array<{ id: string; label: string; weight: number }>,
+  sampleSize: number,
+) {
+  const totalWeight = arms.reduce((sum, arm) => sum + arm.weight, 0)
+  const allocations = arms.map((arm) => {
+    const exact = (sampleSize * arm.weight) / totalWeight
+    return { arm, exact, count: Math.floor(exact) }
+  })
+  let remainder = sampleSize - allocations.reduce((sum, row) => sum + row.count, 0)
+  allocations
+    .sort((a, b) => b.exact - Math.floor(b.exact) - (a.exact - Math.floor(a.exact)))
+    .forEach((row) => {
+      if (remainder > 0) {
+        row.count += 1
+        remainder -= 1
+      }
+    })
+  return arms.map((arm) => {
+    const row = allocations.find((item) => item.arm.id === arm.id)!
+    return {
+      armId: arm.id,
+      label: arm.label,
+      count: row.count,
+      percent: sampleSize ? Math.round((row.count / sampleSize) * 1000) / 10 : 0,
+    }
+  })
 }
 
 function canonicalStratum(factorKeys: string[], factors: Record<string, string>) {
@@ -199,6 +228,23 @@ export const randomizationRoutes: FastifyPluginAsync = async (app) => {
       }
       counts.set(armId, (counts.get(armId) ?? 0) + 1)
     }
+    const factorKeys = parsed.data.config.factorKeys ?? []
+    const siteStrata = factorKeys.includes('site')
+      ? (sqlite
+          .prepare(
+            `SELECT id, name FROM sites WHERE study_id = ? AND status = 'active' ORDER BY name`,
+          )
+          .all(studyId) as Array<{ id: string; name: string }>).map((site, index, sites) => {
+          const base = Math.floor(parsed.data.sampleSize / sites.length)
+          const remainder = parsed.data.sampleSize % sites.length
+          const size = base + (index < remainder ? 1 : 0)
+          return {
+            key: site.id,
+            factors: { site: site.name },
+            results: proportionalPreviewResults(parsed.data.arms, size),
+          }
+        })
+      : []
     return {
       sampleSize: parsed.data.sampleSize,
       method: parsed.data.method,
@@ -208,6 +254,22 @@ export const randomizationRoutes: FastifyPluginAsync = async (app) => {
         count: counts.get(arm.id) ?? 0,
         percent: Math.round(((counts.get(arm.id) ?? 0) / parsed.data.sampleSize) * 1000) / 10,
       })),
+      strata: siteStrata.length || factorKeys.length
+        ? [
+            ...(siteStrata.length
+              ? siteStrata
+              : [{
+                  key: 'preview',
+                  factors: Object.fromEntries(factorKeys.map((key) => [key, 'preview'])),
+                  results: parsed.data.arms.map((arm) => ({
+                    armId: arm.id,
+                    label: arm.label,
+                    count: counts.get(arm.id) ?? 0,
+                    percent: Math.round(((counts.get(arm.id) ?? 0) / parsed.data.sampleSize) * 1000) / 10,
+                  })),
+                }]),
+          ]
+        : [],
     }
   })
 

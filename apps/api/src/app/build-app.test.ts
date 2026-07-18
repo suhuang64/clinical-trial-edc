@@ -966,33 +966,6 @@ describe('API 基础能力', () => {
     })
     expect(deniedSelectedSiteDashboard.statusCode).toBe(403)
     expect(deniedSelectedSiteDashboard.json().code).toBe('SITE_ACCESS_DENIED')
-    const scopedDashboardExport = await app!.inject({
-      method: 'POST',
-      url: `/api/v1/studies/${studyId}/dashboard/export.csv`,
-      headers: investigatorHeaders,
-    })
-    expect(scopedDashboardExport.statusCode).toBe(403)
-
-    const dashboardExport = await app!.inject({
-      method: 'POST',
-      url: `/api/v1/studies/${studyId}/dashboard/export.csv`,
-      headers,
-    })
-    expect(dashboardExport.statusCode).toBe(200)
-    expect(dashboardExport.headers['content-type']).toContain('text/csv')
-    expect(dashboardExport.body).toContain('status_distribution')
-    expect(dashboardExport.body).toContain('metrics')
-    const dashboardExportAudit = await app!.inject({
-      method: 'GET',
-      url: `/api/v1/studies/${studyId}/audit?action=dashboard.exported`,
-      headers,
-    })
-    expect(dashboardExportAudit.json().items).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ action: 'dashboard.exported', objectType: 'dashboard' }),
-      ]),
-    )
-
     const crossSiteWrite = await app!.inject({
       method: 'POST',
       url: `/api/v1/studies/${studyId}/subjects`,

@@ -29,6 +29,11 @@ interface SimulationRow {
   count: number
   percent: number
 }
+interface SimulationStratum {
+  key: string
+  factors: Record<string, string>
+  results: SimulationRow[]
+}
 
 const studyStore = useStudyStore()
 const { t } = useI18n()
@@ -39,13 +44,14 @@ const canManage = ref(false)
 const schemeStatus = ref<'none' | 'draft' | 'active' | 'frozen'>('none')
 const sequencePosition = ref(0)
 const simulation = ref<SimulationRow[]>([])
+const simulationStrata = ref<SimulationStratum[]>([])
 const sampleSize = ref(200)
 const form = reactive({
   name: t('randomization.defaultName'),
   method: 'stratified_block' as Method,
   arms: [
-    { id: 'A', label: t('randomization.armA'), weight: 1 },
-    { id: 'B', label: t('randomization.armB'), weight: 1 },
+    { id: 'A', label: '', weight: 1 },
+    { id: 'B', label: '', weight: 1 },
   ] as Arm[],
   blockSizes: [4, 6] as number[],
   factorKeys: ['site'] as string[],
@@ -138,9 +144,12 @@ async function load() {
 }
 
 function addArm() {
+  if (frozen.value) return
+  const index = form.arms.length
+  const id = index < 26 ? String.fromCharCode(65 + index) : `G${index + 1}`
   form.arms.push({
-    id: `G${form.arms.length + 1}`,
-    label: t('randomization.armNumber', { number: form.arms.length + 1 }),
+    id,
+    label: '',
     weight: 1,
   })
 }
@@ -199,11 +208,12 @@ async function simulate() {
   if (!studyStore.currentStudyId) return
   simulating.value = true
   try {
-    const response = await apiRequest<{ results: SimulationRow[] }>(
+    const response = await apiRequest<{ results: SimulationRow[]; strata?: SimulationStratum[] }>(
       `/studies/${studyStore.currentStudyId}/randomization/scheme/simulate`,
       { method: 'POST', body: JSON.stringify({ ...payload(), sampleSize: sampleSize.value }) },
     )
     simulation.value = response.results
+    simulationStrata.value = response.strata ?? []
   } catch (error) {
     ElMessage.error(
       error instanceof ApiClientError ? error.message : t('randomization.simulationFailed'),
@@ -294,7 +304,11 @@ watch(() => studyStore.currentStudyId, load, { immediate: true })
                   </el-button>
                 </div>
               </div>
-              <el-button class="add-arm" :disabled="form.arms.length >= 10" @click="addArm">
+              <el-button
+                class="add-arm"
+                :disabled="frozen || form.arms.length >= 10"
+                @click="addArm"
+              >
                 {{ t('randomization.addArm') }}
               </el-button>
               <el-form-item
@@ -382,7 +396,26 @@ watch(() => studyStore.currentStudyId, load, { immediate: true })
                 ><small>{{ row.percent }}%</small>
               </div>
             </div>
-            <div v-else class="empty-state simulation-empty">
+            <div v-if="simulationStrata.length" class="simulation-strata">
+              <h3>{{ t('randomization.factors') }}</h3>
+              <div v-for="stratum in simulationStrata" :key="stratum.key" class="stratum-card">
+                <strong>
+                  {{
+                    Object.entries(stratum.factors)
+                      .map(([key, value]) =>
+                        value === 'preview'
+                          ? t(`randomization.factorLabels.${key}`)
+                          : `${t(`randomization.factorLabels.${key}`)}：${value}`,
+                      )
+                      .join(' / ') || t('randomization.simulationStratum')
+                  }}
+                </strong>
+                <span v-for="row in stratum.results" :key="row.armId">
+                  {{ row.label || row.armId }}: {{ row.count }} ({{ row.percent }}%)
+                </span>
+              </div>
+            </div>
+            <div v-if="!simulation.length" class="empty-state simulation-empty">
               <div>
                 <h3>{{ t('randomization.notSimulated') }}</h3>
                 <p class="muted-text">{{ t('randomization.notSimulatedHint') }}</p>
@@ -445,6 +478,26 @@ watch(() => studyStore.currentStudyId, load, { immediate: true })
 .simulation-empty {
   min-height: 180px;
 }
+.simulation-strata {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+.simulation-strata h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.stratum-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: var(--color-surface-subtle);
+}
+.stratum-card strong { width: 100%; }
+.stratum-card span { color: var(--color-text-secondary); font-size: 13px; }
 @media (max-width: 1050px) {
   .randomization-layout {
     grid-template-columns: 1fr;

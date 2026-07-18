@@ -121,6 +121,17 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        path: 'visits',
+        name: 'visits',
+        component: () => import('@/modules/sites/SitesView.vue'),
+        meta: {
+          titleKey: 'nav.visits',
+          nav: 'visits',
+          desktopOnly: true,
+          permission: 'site.manage',
+        },
+      },
+      {
         path: 'exports',
         name: 'exports',
         component: () => import('@/modules/exports/ExportsView.vue'),
@@ -184,7 +195,7 @@ router.beforeEach(async (to) => {
 
 router.afterEach((to) => {
   const key = to.meta.titleKey
-  document.title = key ? `${i18n.global.t(String(key))} · Clinical Trial EDC` : 'Clinical Trial EDC'
+  document.title = key ? `${i18n.global.t(String(key))} · OpenEDC` : 'OpenEDC'
   requestAnimationFrame(() =>
     document.querySelector<HTMLElement>('#main-content')?.focus({ preventScroll: true }),
   )

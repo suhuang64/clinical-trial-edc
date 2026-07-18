@@ -12,6 +12,11 @@ export interface AuthenticatedUser {
   approvalStatus: 'pending' | 'approved' | 'rejected'
   locale: 'zh-CN' | 'en-US'
   theme: 'light' | 'dark' | 'system'
+  gender: 'male' | 'female' | 'other' | 'undisclosed'
+  birthDate: string
+  phone: string
+  email: string
+  organization: string
 }
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex')
@@ -67,6 +72,7 @@ export async function getAuthenticatedUser(
       'users.approval_status',
       'users.locale',
       'users.theme',
+      'users.gender', 'users.birth_date', 'users.phone', 'users.email', 'users.organization',
       'users.status',
       'sessions.expires_at',
     ])
@@ -87,6 +93,11 @@ export async function getAuthenticatedUser(
     approvalStatus: row.approval_status,
     locale: row.locale,
     theme: row.theme,
+    gender: row.gender ?? 'undisclosed',
+    birthDate: row.birth_date ?? '',
+    phone: row.phone ?? '',
+    email: row.email ?? '',
+    organization: row.organization ?? '',
   }
 }
 

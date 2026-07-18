@@ -319,7 +319,7 @@ async function advanceStatus(study: (typeof studies.studies)[number]) {
 <style scoped>
 .study-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
   gap: 12px;
 }
 .study-card {
@@ -334,7 +334,7 @@ async function advanceStatus(study: (typeof studies.studies)[number]) {
 }
 .study-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
   gap: 8px;
 }
@@ -347,9 +347,14 @@ async function advanceStatus(study: (typeof studies.studies)[number]) {
 }
 .study-card footer {
   align-items: center;
+  flex-wrap: nowrap;
   margin-top: 24px;
   padding-top: 12px;
   border-top: 1px solid var(--color-border);
+}
+.study-card footer > span {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .form-grid {
   display: grid;
@@ -358,13 +363,20 @@ async function advanceStatus(study: (typeof studies.studies)[number]) {
 }
 @media (max-width: 1100px) {
   .study-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
   }
 }
 @media (max-width: 767px) {
   .study-grid,
   .form-grid {
     grid-template-columns: 1fr;
+  }
+  .study-card footer {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .study-actions {
+    flex-wrap: wrap;
   }
 }
 </style>

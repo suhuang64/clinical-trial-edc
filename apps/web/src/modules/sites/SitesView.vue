@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { apiRequest, ApiClientError } from '@/api/client'
 import { useStudyStore } from '@/modules/studies/study.store'
 import StatusPill from '@/components/ui/StatusPill.vue'
@@ -27,8 +28,9 @@ interface VisitRow {
 }
 
 const studyStore = useStudyStore()
+const route = useRoute()
 const { t } = useI18n()
-const activeTab = ref('sites')
+const standaloneVisits = computed(() => route.name === 'visits')
 const loading = ref(false)
 const sites = ref<SiteRow[]>([])
 const visits = ref<VisitRow[]>([])
@@ -57,7 +59,6 @@ const visitRules = computed<FormRules>(() => ({
   code: [{ required: true, message: t('sites.visitCodeRequired'), trigger: 'blur' }],
   name: [{ required: true, message: t('sites.visitNameRequired'), trigger: 'blur' }],
 }))
-
 async function load() {
   await studyStore.load()
   if (!currentStudyId.value) return
@@ -237,8 +238,7 @@ onMounted(load)
     :closable="false"
   />
   <template v-else>
-    <el-tabs v-model="activeTab" class="configuration-tabs">
-      <el-tab-pane :label="t('sites.tabs.sites')" name="sites">
+    <template v-if="!standaloneVisits">
         <div class="toolbar">
           <span class="muted-text">{{ t('sites.siteHint') }}</span>
           <span class="toolbar-spacer" />
@@ -296,9 +296,8 @@ onMounted(load)
             </div>
           </div>
         </section>
-      </el-tab-pane>
-
-      <el-tab-pane :label="t('sites.tabs.visits')" name="visits">
+    </template>
+    <template v-else>
         <div class="toolbar">
           <span class="muted-text">{{ t('sites.visitHint') }}</span>
           <span class="toolbar-spacer" />
@@ -322,8 +321,7 @@ onMounted(load)
             </el-table-column>
           </el-table>
         </section>
-      </el-tab-pane>
-    </el-tabs>
+    </template>
 
     <el-dialog
       v-model="siteDialogOpen"

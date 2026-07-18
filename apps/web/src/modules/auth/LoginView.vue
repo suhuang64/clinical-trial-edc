@@ -61,7 +61,7 @@ async function submit() {
     </div>
     <section class="login-brand-panel">
       <div class="brand">
-        <span class="brand-mark">C</span><span class="brand-name">Clinical Trial EDC</span>
+        <span class="brand-mark">O</span><span class="brand-name">OpenEDC</span>
       </div>
       <div>
         <p>{{ t('login.platform') }}</p>

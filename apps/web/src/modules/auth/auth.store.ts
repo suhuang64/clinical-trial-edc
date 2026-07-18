@@ -13,6 +13,11 @@ export interface SessionUser {
   approvalStatus: 'pending' | 'approved' | 'rejected'
   locale: 'zh-CN' | 'en-US'
   theme: 'light' | 'dark' | 'system'
+  gender: 'male' | 'female' | 'other' | 'undisclosed'
+  birthDate: string
+  phone: string
+  email: string
+  organization: string
 }
 
 export const useAuthStore = defineStore('auth', () => {

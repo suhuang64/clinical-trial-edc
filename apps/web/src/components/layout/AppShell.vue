@@ -57,6 +57,7 @@ const navigation = [
     permission: 'randomization.manage',
   },
   { key: 'sites', path: '/sites', icon: House, permission: 'site.manage' },
+  { key: 'visits', path: '/visits', icon: Document, permission: 'site.manage' },
   { key: 'members', path: '/members', icon: User, permission: 'member.view' },
   { key: 'exports', path: '/exports', icon: FolderOpened, permission: 'export.execute' },
   { key: 'audit', path: '/audit', icon: Document, permission: 'audit.view' },
@@ -156,7 +157,7 @@ onMounted(() => studies.load())
     <a class="skip-link" href="#main-content">{{ t('common.skipToContent') }}</a>
     <aside v-if="!isMobile" class="app-sidebar" :class="{ collapsed: sidebarCollapsed }">
       <div class="brand">
-        <span class="brand-mark" aria-hidden="true">C</span>
+        <span class="brand-mark" aria-hidden="true">O</span>
         <span v-if="!sidebarCollapsed" class="brand-name">{{ t('common.appName') }}</span>
       </div>
       <nav class="sidebar-nav" :aria-label="t('common.mainNavigation')">
@@ -243,9 +244,7 @@ onMounted(() => studies.load())
           </button>
           <el-dropdown>
             <button class="user-button" type="button" :aria-label="t('common.userMenu')">
-              <span class="user-avatar">{{
-                auth.user?.displayName.slice(0, 2).toUpperCase() ?? 'ED'
-              }}</span>
+              <el-icon class="user-avatar" aria-hidden="true"><Avatar /></el-icon>
               <span v-if="width >= 1024">{{ auth.user?.displayName ?? t('common.user') }}</span>
             </button>
             <template #dropdown>

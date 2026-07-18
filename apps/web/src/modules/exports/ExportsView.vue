@@ -186,7 +186,7 @@ onBeforeUnmount(() => {
           <el-form-item :label="t('exports.format')" required>
             <el-radio-group v-model="form.format">
               <el-radio-button value="csv">CSV</el-radio-button>
-              <el-radio-button value="xlsx">Excel (.xlsx)</el-radio-button>
+              <el-radio-button value="xlsx">Excel</el-radio-button>
             </el-radio-group>
           </el-form-item>
           <div class="export-submit">

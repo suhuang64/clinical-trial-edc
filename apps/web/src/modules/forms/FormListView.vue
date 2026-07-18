@@ -437,7 +437,12 @@ onBeforeUnmount(() => {
         </dl>
         <footer>
           <span class="muted-text">{{ formatDateTime(form.updated_at) }}</span>
-          <div>
+          <div class="form-primary-actions">
+            <el-button link type="primary" @click="router.push(`/forms/designer/${form.id}`)">
+              {{ t('formList.openDesigner') }}
+            </el-button>
+          </div>
+          <div class="form-secondary-actions">
             <el-button link type="primary" @click="copyForm(form)">
               {{ t('formList.copy') }}
             </el-button>
@@ -449,9 +454,6 @@ onBeforeUnmount(() => {
             </el-button>
             <el-button link type="primary" @click="openMigrationDrawer(form)">
               {{ t('formList.migrationHistory') }}
-            </el-button>
-            <el-button link type="primary" @click="router.push(`/forms/designer/${form.id}`)">
-              {{ t('formList.openDesigner') }}
             </el-button>
           </div>
         </footer>
@@ -725,9 +727,34 @@ onBeforeUnmount(() => {
   font-weight: 650;
 }
 .form-card footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'date open'
+    'secondary secondary';
   align-items: center;
   padding-top: 12px;
   border-top: 1px solid var(--color-border);
+}
+.form-card footer > .muted-text {
+  grid-area: date;
+  padding-left: 12px;
+}
+.form-primary-actions {
+  grid-area: open;
+  justify-self: end;
+  margin-left: 0;
+  padding-right: 16px;
+}
+.form-secondary-actions {
+  display: flex;
+  grid-area: secondary;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-left: 12px;
+  padding-right: 16px;
+  padding-top: 4px;
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 55%, transparent);
 }
 @media (max-width: 1100px) {
   .form-card-grid {
@@ -737,6 +764,18 @@ onBeforeUnmount(() => {
 @media (max-width: 767px) {
   .form-card-grid {
     grid-template-columns: 1fr;
+  }
+  .form-card footer {
+    align-items: flex-start;
+  }
+  .form-primary-actions {
+    justify-self: end;
+    padding-right: 0;
+  }
+  .form-secondary-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    padding-right: 0;
   }
 }
 @media (hover: none), (max-width: 1024px) {
