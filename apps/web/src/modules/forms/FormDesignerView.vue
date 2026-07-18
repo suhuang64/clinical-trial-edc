@@ -297,6 +297,32 @@ async function publish() {
   }
 }
 
+async function deleteForm() {
+  if (isNew.value || !studyStore.currentStudyId) return
+  const confirmed = await ElMessageBox.confirm(
+    t('formDesigner.deleteWarning'),
+    t('formDesigner.deleteTitle'),
+    {
+      type: 'warning',
+      confirmButtonText: t('formDesigner.confirmDelete'),
+      cancelButtonText: t('formDesigner.continueEditing'),
+    },
+  ).catch(() => null)
+  if (!confirmed) return
+  try {
+    await apiRequest(`/studies/${studyStore.currentStudyId}/forms/${formId.value}`, {
+      method: 'DELETE',
+    })
+    dirty.value = false
+    ElMessage.success(t('formDesigner.deleted'))
+    await router.push('/forms')
+  } catch (error) {
+    ElMessage.error(
+      error instanceof ApiClientError ? error.message : t('formDesigner.deleteFailed'),
+    )
+  }
+}
+
 async function load() {
   await studyStore.load()
   if (!studyStore.currentStudyId) return
@@ -373,6 +399,9 @@ onBeforeRouteLeave(async () => {
     <span class="muted-text"
       >{{ versionLabel }}<template v-if="dirty"> · {{ t('formDesigner.unsaved') }}</template></span
     >
+    <el-button v-if="!isNew" type="danger" plain @click="deleteForm">
+      {{ t('formDesigner.deleteForm') }}
+    </el-button>
     <el-button @click="previewOpen = true">{{ t('formDesigner.previewAction') }}</el-button>
     <el-button :loading="saving" @click="saveDraft()">{{ t('formDesigner.saveDraft') }}</el-button>
     <el-button type="primary" :loading="publishing" @click="publish">

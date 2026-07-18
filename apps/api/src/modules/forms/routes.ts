@@ -1054,6 +1054,64 @@ export const formRoutes: FastifyPluginAsync = async (app) => {
     }
   })
 
+  app.delete('/:formId', async (request, reply) => {
+    const { studyId, formId } = request.params as { studyId: string; formId: string }
+    const auth = await requireStudyPermission(request, reply, studyId, 'form.manage')
+    if (!auth) return
+    if (!(await verifyCsrf(request, reply))) return
+    if (!(await requireStudyStatus(studyId, ['draft', 'active'], request, reply))) return
+    const form = formByStudy(studyId, formId)
+    if (!form)
+      return reply
+        .code(404)
+        .send({ code: 'FORM_NOT_FOUND', message: '表单不存在', requestId: request.id })
+
+    const recordCount = (
+      sqlite
+        .prepare('SELECT COUNT(*) AS value FROM data_records WHERE study_id = ? AND form_id = ?')
+        .get(studyId, formId) as { value: number }
+    ).value
+    if (recordCount > 0) {
+      return reply.code(409).send({
+        code: 'FORM_HAS_RECORDS',
+        message: `该表单已有 ${recordCount} 条数据记录，不能删除`,
+        requestId: request.id,
+      })
+    }
+    const pendingMigration = sqlite
+      .prepare(
+        `SELECT 1 FROM form_migration_jobs
+         WHERE study_id = ? AND form_id = ? AND status IN ('pending', 'running') LIMIT 1`,
+      )
+      .get(studyId, formId)
+    if (pendingMigration) {
+      return reply.code(409).send({
+        code: 'FORM_MIGRATION_IN_PROGRESS',
+        message: '该表单正在迁移，完成后才能删除',
+        requestId: request.id,
+      })
+    }
+
+    sqlite.prepare('DELETE FROM forms WHERE study_id = ? AND id = ?').run(studyId, formId)
+    await writeAudit({
+      requestId: request.id,
+      actorUserId: auth.user.id,
+      studyId,
+      objectType: 'form',
+      objectId: formId,
+      action: 'form.deleted',
+      before: {
+        code: form.code,
+        name: form.name,
+        formType: form.form_type,
+        status: form.status,
+      },
+      after: null,
+      ...requestAuditContext(request),
+    })
+    return reply.code(204).send()
+  })
+
   app.put('/:formId/draft', async (request, reply) => {
     const { studyId, formId } = request.params as { studyId: string; formId: string }
     const auth = await requireStudyPermission(request, reply, studyId, 'form.manage')
