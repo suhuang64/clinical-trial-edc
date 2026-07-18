@@ -88,6 +88,7 @@ const actionLabels = computed<Record<string, string>>(() => ({
   'user.active': t('audit.actions.userActivated'),
   'user.disabled': t('audit.actions.userDisabled'),
   'study.created': t('audit.actions.studyCreated'),
+  'study.deleted': t('audit.actions.studyDeleted'),
   'study.updated': t('audit.actions.studyUpdated'),
   'study.status_changed': t('audit.actions.studyStatusChanged'),
   'study.numbering_updated': t('audit.actions.numberingUpdated'),

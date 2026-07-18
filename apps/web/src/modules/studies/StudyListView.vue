@@ -17,7 +17,9 @@ const query = ref('')
 const includeArchived = ref(false)
 const dialogOpen = ref(false)
 const editingStudyId = ref('')
+const editingStudyStatus = ref<'draft' | 'active' | 'ended' | 'archived' | ''>('')
 const saving = ref(false)
+const deleting = ref(false)
 const formRef = ref<FormInstance>()
 const form = reactive({
   protocolCode: '',
@@ -32,6 +34,7 @@ const form = reactive({
 })
 
 const canCreate = computed(() => Boolean(auth.user?.isSystemAdmin))
+const editingReadOnly = computed(() => ['ended', 'archived'].includes(editingStudyStatus.value))
 const filteredStudies = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase()
   if (!keyword) return studies.studies
@@ -85,6 +88,7 @@ function resetForm() {
     notes: '',
   })
   editingStudyId.value = ''
+  editingStudyStatus.value = ''
   formRef.value?.clearValidate()
 }
 
@@ -95,6 +99,7 @@ function enterStudy(id: string) {
 
 function openEdit(study: (typeof studies.studies)[number]) {
   editingStudyId.value = study.id
+  editingStudyStatus.value = study.status
   Object.assign(form, {
     protocolCode: study.protocolCode,
     name: study.name,
@@ -107,6 +112,33 @@ function openEdit(study: (typeof studies.studies)[number]) {
     notes: study.notes ?? '',
   })
   dialogOpen.value = true
+}
+
+async function deleteStudy() {
+  if (!canCreate.value || !editingStudyId.value) return
+  const studyId = editingStudyId.value
+  const studyName = form.name
+  const confirmed = await ElMessageBox.confirm(
+    t('studies.deleteWarning', { study: studyName }),
+    t('studies.deleteTitle', { study: studyName }),
+    {
+      type: 'error',
+      confirmButtonText: t('studies.confirmDelete'),
+      cancelButtonText: t('common.cancel'),
+      confirmButtonClass: 'el-button--danger',
+    },
+  ).catch(() => null)
+  if (!confirmed) return
+  deleting.value = true
+  try {
+    await studies.remove(studyId)
+    dialogOpen.value = false
+    ElMessage.success(t('studies.deleted'))
+  } catch (error) {
+    ElMessage.error(error instanceof ApiClientError ? error.message : t('studies.deleteFailed'))
+  } finally {
+    deleting.value = false
+  }
 }
 
 async function saveStudy() {
@@ -196,7 +228,7 @@ async function advanceStatus(study: (typeof studies.studies)[number]) {
         <span>{{ study.startDate || t('studies.noStartDate') }}</span>
         <div class="study-actions">
           <el-button
-            v-if="study.canManage && ['draft', 'active'].includes(study.status)"
+            v-if="canCreate || (study.canManage && ['draft', 'active'].includes(study.status))"
             @click="openEdit(study)"
           >
             {{ t('studies.edit') }}
@@ -240,7 +272,13 @@ async function advanceStatus(study: (typeof studies.studies)[number]) {
     :close-on-click-modal="false"
     @closed="resetForm"
   >
-    <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
+    <el-form
+      ref="formRef"
+      :model="form"
+      :rules="rules"
+      label-position="top"
+      :disabled="editingReadOnly"
+    >
       <div class="form-grid">
         <el-form-item :label="t('studies.protocolCode')" prop="protocolCode" required>
           <el-input v-model="form.protocolCode" maxlength="100" autocomplete="off" />
@@ -308,8 +346,17 @@ async function advanceStatus(study: (typeof studies.studies)[number]) {
       />
     </el-form>
     <template #footer>
+      <el-button
+        v-if="canCreate && editingStudyId"
+        type="danger"
+        plain
+        :loading="deleting"
+        @click="deleteStudy"
+      >
+        {{ t('studies.deleteStudy') }}
+      </el-button>
       <el-button @click="dialogOpen = false">{{ t('common.cancel') }}</el-button>
-      <el-button type="primary" :loading="saving" @click="saveStudy">
+      <el-button type="primary" :loading="saving" :disabled="editingReadOnly" @click="saveStudy">
         {{ editingStudyId ? t('studies.saveChanges') : t('studies.create') }}
       </el-button>
     </template>

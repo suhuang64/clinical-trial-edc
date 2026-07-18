@@ -126,6 +126,12 @@ export const useStudyStore = defineStore('studies', () => {
     await load(true, true)
   }
 
+  async function remove(studyId: string) {
+    await apiRequest(`/studies/${studyId}`, { method: 'DELETE' })
+    if (currentStudyId.value === studyId) setCurrent('')
+    await load(true, true)
+  }
+
   async function changeStatus(
     studyId: string,
     status: 'active' | 'ended' | 'archived',
@@ -150,6 +156,7 @@ export const useStudyStore = defineStore('studies', () => {
     reset,
     create,
     update,
+    remove,
     changeStatus,
   }
 })

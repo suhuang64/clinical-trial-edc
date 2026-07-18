@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, rmSync, unlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { dirname, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -2446,6 +2446,87 @@ describe('API 基础能力', () => {
     })
     expect(saveAfterActivation.statusCode).toBe(409)
     expect(saveAfterActivation.json().code).toBe('SCREENING_FORM_RANDOMIZATION_LOCKED')
+  })
+
+  it('仅超级管理员可以删除研究项目及其全部数据和文件', async () => {
+    const headers = { cookie: sessionCookie, 'x-csrf-token': csrfToken }
+    const studyResponse = await app!.inject({
+      method: 'POST',
+      url: '/api/v1/studies',
+      headers,
+      payload: { protocolCode: `DELETE-${randomUUID()}`, name: '待删除研究项目' },
+    })
+    expect(studyResponse.statusCode).toBe(201)
+    const studyId = studyResponse.json().id as string
+    const siteResponse = await app!.inject({
+      method: 'POST',
+      url: `/api/v1/studies/${studyId}/sites`,
+      headers,
+      payload: { name: '待删除中心' },
+    })
+    expect(siteResponse.statusCode).toBe(201)
+    const siteId = siteResponse.json().id as string
+    const activate = await app!.inject({
+      method: 'POST',
+      url: `/api/v1/studies/${studyId}/status`,
+      headers,
+      payload: { status: 'active' },
+    })
+    expect(activate.statusCode).toBe(200)
+    const subject = await app!.inject({
+      method: 'POST',
+      url: `/api/v1/studies/${studyId}/subjects`,
+      headers,
+      payload: { siteId, screeningData: {} },
+    })
+    expect(subject.statusCode).toBe(201)
+
+    const studyUploadPath = resolve(uploadPath, studyId)
+    const studyExportPath = resolve(exportPath, studyId)
+    mkdirSync(studyUploadPath, { recursive: true })
+    mkdirSync(studyExportPath, { recursive: true })
+    writeFileSync(resolve(studyUploadPath, 'test.bin'), 'upload')
+    writeFileSync(resolve(studyExportPath, 'test.csv'), 'export')
+
+    const nonAdminId = await createPlatformUser(
+      headers,
+      `delete-denied-${randomUUID()}`,
+      '普通用户',
+      'Delete-Denied-Password-2026',
+    )
+    const auth = await import('../auth/auth.js')
+    const nonAdminSession = await auth.createSession(nonAdminId)
+    const denied = await app!.inject({
+      method: 'DELETE',
+      url: `/api/v1/studies/${studyId}`,
+      headers: {
+        cookie: `edc_session=${nonAdminSession.token}`,
+        'x-csrf-token': nonAdminSession.csrfToken,
+      },
+    })
+    expect(denied.statusCode).toBe(403)
+    expect(denied.json().code).toBe('SYSTEM_ADMIN_REQUIRED')
+
+    const deleted = await app!.inject({
+      method: 'DELETE',
+      url: `/api/v1/studies/${studyId}`,
+      headers,
+    })
+    expect(deleted.statusCode).toBe(204)
+    const { sqlite } = await import('../db/database.js')
+    expect(sqlite.prepare('SELECT 1 FROM studies WHERE id = ?').get(studyId)).toBeUndefined()
+    expect(sqlite.prepare('SELECT 1 FROM sites WHERE study_id = ?').get(studyId)).toBeUndefined()
+    expect(sqlite.prepare('SELECT 1 FROM subjects WHERE study_id = ?').get(studyId)).toBeUndefined()
+    expect(
+      sqlite.prepare('SELECT 1 FROM audit_events WHERE study_id = ?').get(studyId),
+    ).toBeUndefined()
+    expect(
+      sqlite
+        .prepare("SELECT 1 FROM audit_events WHERE action = 'study.deleted' AND object_id = ?")
+        .get(studyId),
+    ).toBeDefined()
+    expect(existsSync(studyUploadPath)).toBe(false)
+    expect(existsSync(studyExportPath)).toBe(false)
   })
 
   it('千条数据的导出创建与表单迁移均在后台执行', async () => {

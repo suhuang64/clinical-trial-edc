@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { rmSync } from 'node:fs'
+import { resolve, sep } from 'node:path'
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { requireUser, verifyCsrf } from '../../auth/auth.js'
@@ -8,8 +10,11 @@ import {
   resolveMembershipPermissions,
 } from '../../auth/permissions.js'
 import { writeAudit } from '../../audit/audit.js'
+import { config } from '../../config.js'
 import { db, numberingRepository, sqlite } from '../../db/database.js'
 import { NumberingRuleFrozenError } from '../../db/repositories/numbering-repository.js'
+import { waitForExportJobs } from '../exports/routes.js'
+import { waitForFormMigrationJobs } from '../forms/routes.js'
 
 const studyMetadataSchema = z.object({
   protocolCode: z.string().trim().min(1).max(100),
@@ -56,6 +61,15 @@ const createVisitSchema = z.object({
   name: z.string().trim().min(1).max(200),
   sortOrder: z.number().int().min(0).max(10_000).default(0),
 })
+
+function removeStudyStorage(root: string, studyId: string) {
+  const normalizedRoot = resolve(root)
+  const target = resolve(normalizedRoot, studyId)
+  if (target === normalizedRoot || !target.startsWith(`${normalizedRoot}${sep}`)) {
+    throw new Error('项目存储路径超出根目录')
+  }
+  rmSync(target, { recursive: true, force: true })
+}
 
 export const studyRoutes: FastifyPluginAsync = async (app) => {
   app.get('/', async (request, reply) => {
@@ -194,6 +208,67 @@ export const studyRoutes: FastifyPluginAsync = async (app) => {
         .code(404)
         .send({ code: 'STUDY_NOT_FOUND', message: '研究项目不存在', requestId: request.id })
     return { study }
+  })
+
+  app.delete('/:studyId', async (request, reply) => {
+    const studyId = (request.params as { studyId: string }).studyId
+    const user = await requireUser(request, reply)
+    if (!user) return
+    if (!user.isSystemAdmin) {
+      return reply.code(403).send({
+        code: 'SYSTEM_ADMIN_REQUIRED',
+        message: '仅系统超级管理员可以删除研究项目',
+        requestId: request.id,
+      })
+    }
+    if (!(await verifyCsrf(request, reply))) return
+    const study = await db
+      .selectFrom('studies')
+      .selectAll()
+      .where('id', '=', studyId)
+      .executeTakeFirst()
+    if (!study)
+      return reply
+        .code(404)
+        .send({ code: 'STUDY_NOT_FOUND', message: '研究项目不存在', requestId: request.id })
+
+    await Promise.all([waitForExportJobs(), waitForFormMigrationJobs()])
+    const now = new Date().toISOString()
+    sqlite.transaction(() => {
+      sqlite.prepare('DELETE FROM audit_events WHERE study_id = ?').run(studyId)
+      const deleted = sqlite.prepare('DELETE FROM studies WHERE id = ?').run(studyId)
+      if (deleted.changes !== 1) throw new Error('研究项目删除失败')
+      sqlite
+        .prepare(
+          `INSERT INTO audit_events
+           (id, request_id, actor_user_id, study_id, site_id, site_name_snapshot, subject_id,
+            object_type, object_id, action, before_json, after_json, reason,
+            ip_address, user_agent, created_at)
+           VALUES (?, ?, ?, NULL, NULL, NULL, NULL, 'study', ?, 'study.deleted', ?, NULL, NULL, ?, ?, ?)`,
+        )
+        .run(
+          randomUUID(),
+          request.id,
+          user.id,
+          studyId,
+          JSON.stringify(study),
+          request.ip,
+          request.headers['user-agent'] ?? null,
+          now,
+        )
+    })()
+    try {
+      removeStudyStorage(config.uploadRoot, studyId)
+      removeStudyStorage(config.exportRoot, studyId)
+    } catch (error) {
+      request.log.error(error, '研究项目数据已删除，但清理关联文件失败')
+      return reply.code(500).send({
+        code: 'STUDY_FILE_CLEANUP_FAILED',
+        message: '项目数据已删除，但关联文件清理失败，请检查服务器存储',
+        requestId: request.id,
+      })
+    }
+    return reply.code(204).send()
   })
 
   app.put('/:studyId', async (request, reply) => {
