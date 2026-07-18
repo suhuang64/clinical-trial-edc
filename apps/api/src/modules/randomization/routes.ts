@@ -46,6 +46,8 @@ const simulationSchema = schemeSchema.extend({
   sampleSize: z.number().int().min(10).max(10_000).default(200),
 })
 
+const SUPPORTED_FACTOR_KEYS = ['site'] as const
+
 interface SchemeRow {
   id: string
   study_id: string
@@ -58,6 +60,11 @@ interface SchemeRow {
 }
 
 function validateScheme(data: z.infer<typeof schemeSchema>) {
+  const unsupportedFactors = (data.config.factorKeys ?? []).filter(
+    (key) => !(SUPPORTED_FACTOR_KEYS as readonly string[]).includes(key),
+  )
+  if (unsupportedFactors.length)
+    throw new Error(`暂不支持以下分层因素：${unsupportedFactors.join('、')}`)
   if (new Set(data.arms.map((arm) => arm.id)).size !== data.arms.length)
     throw new Error('治疗组 ID 不得重复')
   const ratioTotal = data.arms.reduce((sum, arm) => sum + arm.weight, 0)

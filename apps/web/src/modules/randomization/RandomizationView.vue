@@ -159,6 +159,10 @@ function removeArm(index: number) {
 
 async function save(showMessage = true) {
   if (!studyStore.currentStudyId) return false
+  if (form.seedMode === 'manual' && form.seed.trim().length < 16) {
+    ElMessage.error(t('randomization.seedInvalid'))
+    return false
+  }
   saving.value = true
   try {
     await apiRequest(`/studies/${studyStore.currentStudyId}/randomization/scheme`, {
@@ -330,12 +334,7 @@ watch(() => studyStore.currentStudyId, load, { immediate: true })
               >
                 <el-checkbox-group v-model="form.factorKeys">
                   <el-checkbox value="site">{{ t('randomization.factorLabels.site') }}</el-checkbox
-                  ><el-checkbox value="sex">{{ t('randomization.factorLabels.sex') }}</el-checkbox
-                  ><el-checkbox value="age_group">
-                    {{ t('randomization.factorLabels.ageGroup') }} </el-checkbox
-                  ><el-checkbox value="disease_stage">
-                    {{ t('randomization.factorLabels.diseaseStage') }}
-                  </el-checkbox>
+                  >
                 </el-checkbox-group>
               </el-form-item>
               <el-form-item
