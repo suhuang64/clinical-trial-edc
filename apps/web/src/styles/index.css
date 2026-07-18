@@ -23,24 +23,223 @@
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --color-primary: #60a5fa;
-  --color-primary-hover: #93c5fd;
-  --color-accent: #22d3ee;
-  --color-background: #0b1220;
-  --color-surface: #111b2e;
-  --color-surface-subtle: #162238;
-  --color-text: #e6edf7;
-  --color-text-secondary: #a8b3c7;
-  --color-border: #2b3a52;
+  --color-primary: #d4d4d4;
+  --color-primary-hover: #f0f0f0;
+  --color-accent: #a3a3a3;
+  --color-background: #0a0a0a;
+  --color-surface: #141414;
+  --color-surface-subtle: #1d1d1d;
+  --color-text: #f2f2f2;
+  --color-text-secondary: #b3b3b3;
+  --color-border: #343434;
   --color-success: #4ade80;
   --color-warning: #fbbf24;
   --color-danger: #fb7185;
-  --color-info: #38bdf8;
-  --color-focus: #93c5fd;
+  --color-info: #a3a3a3;
+  --color-focus: #e5e5e5;
+
+  /* Element Plus inherits these values so controls never fall back to white. */
+  --el-bg-color: var(--color-surface);
+  --el-bg-color-page: var(--color-background);
+  --el-bg-color-overlay: #202020;
+  --el-text-color-primary: var(--color-text);
+  --el-text-color-regular: var(--color-text);
+  --el-text-color-secondary: var(--color-text-secondary);
+  --el-text-color-placeholder: #858585;
+  --el-border-color: var(--color-border);
+  --el-border-color-light: #292929;
+  --el-border-color-lighter: #242424;
+  --el-border-color-extra-light: #202020;
+  --el-border-color-dark: #4a4a4a;
+  --el-fill-color: #242424;
+  --el-fill-color-light: #202020;
+  --el-fill-color-lighter: #1b1b1b;
+  --el-fill-color-extra-light: #171717;
+  --el-fill-color-dark: #303030;
+  --el-fill-color-blank: var(--color-surface);
+  --el-color-primary: #bdbdbd;
+  --el-color-primary-light-3: #cfcfcf;
+  --el-color-primary-light-5: #bdbdbd;
+  --el-color-primary-light-7: #858585;
+  --el-color-primary-light-8: #626262;
+  --el-color-primary-light-9: #303030;
+  --el-color-primary-dark-2: #eeeeee;
+  --el-disabled-bg-color: #1e1e1e;
+  --el-disabled-text-color: #747474;
+  --el-disabled-border-color: #303030;
+  --el-input-bg-color: var(--color-surface);
+  --el-mask-color: rgb(0 0 0 / 72%);
+  --el-table-bg-color: var(--color-surface);
+  --el-table-tr-bg-color: var(--color-surface);
+  --el-table-header-bg-color: #1d1d1d;
+  --el-table-border-color: var(--color-border);
+  --el-table-row-hover-bg-color: #252525;
+  --el-table-current-row-bg-color: #2a2a2a;
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* Element Plus components that use painted surfaces rather than only tokens. */
+:root[data-theme='dark'] {
+  .el-input__wrapper,
+  .el-select__wrapper,
+  .el-input-number,
+  .el-textarea__inner,
+  .el-date-editor.el-input,
+  .el-date-editor.el-input__wrapper,
+  .el-date-editor .el-input__wrapper {
+    background: var(--color-surface);
+    box-shadow: 0 0 0 1px var(--color-border) inset;
+  }
+
+  .el-input__wrapper:hover,
+  .el-select__wrapper:hover,
+  .el-textarea__inner:hover,
+  .el-input-number:hover {
+    box-shadow: 0 0 0 1px #5a5a5a inset;
+  }
+
+  .el-input__wrapper.is-focus,
+  .el-select__wrapper.is-focused,
+  .el-textarea__inner:focus,
+  .el-input-number.is-controls-right .el-input__wrapper:focus-within {
+    box-shadow: 0 0 0 1px var(--color-focus) inset;
+  }
+
+  .el-button {
+    border-color: var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text);
+  }
+
+  .el-button:hover,
+  .el-button:focus-visible {
+    border-color: #737373;
+    background: #242424;
+    color: #fff;
+  }
+
+  .el-button--primary,
+  .el-button--primary:hover,
+  .el-button--primary:focus-visible {
+    border-color: #bdbdbd;
+    background: #bdbdbd;
+    color: #0a0a0a;
+  }
+
+  .el-select-dropdown,
+  .el-popper,
+  .el-picker-panel,
+  .el-time-panel,
+  .el-color-picker__panel,
+  .el-dialog,
+  .el-drawer,
+  .el-message,
+  .el-notification {
+    border-color: var(--color-border);
+    background: #202020;
+    color: var(--color-text);
+  }
+
+  .el-select-dropdown__item:hover,
+  .el-select-dropdown__item.hover,
+  .el-picker-panel__content td:hover,
+  .el-time-spinner__item:hover,
+  .el-cascader-node:not(.is-disabled):hover {
+    background: #303030;
+  }
+
+  .el-table,
+  .el-table th.el-table__cell,
+  .el-table tr,
+  .el-table td.el-table__cell,
+  .el-table__expanded-cell {
+    background: var(--color-surface);
+    color: var(--color-text);
+    border-color: var(--color-border);
+  }
+
+  .el-table th.el-table__cell {
+    background: var(--color-surface-subtle);
+    color: var(--color-text-secondary);
+  }
+
+  .el-table--enable-row-hover .el-table__body tr:hover > td.el-table__cell {
+    background: #252525;
+  }
+
+  .el-card,
+  .el-collapse-item__header,
+  .el-collapse-item__wrap,
+  .el-menu,
+  .el-menu-item,
+  .el-sub-menu__title {
+    border-color: var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text);
+  }
+
+  .el-menu-item:hover,
+  .el-sub-menu__title:hover {
+    background: #242424;
+  }
+
+  .el-pagination button,
+  .el-pagination .el-pager li {
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+  }
+
+  .el-pagination .el-pager li.is-active {
+    background: #bdbdbd;
+    color: #0a0a0a;
+  }
+
+  .el-alert {
+    border: 1px solid #404040;
+    background: #202020;
+    color: var(--color-text);
+  }
+
+  .el-alert__title,
+  .el-alert__description {
+    color: inherit;
+  }
+
+  .el-alert--warning {
+    border-color: #65552a;
+    background: #282519;
+    color: #e5c66b;
+  }
+
+  .el-alert--success {
+    border-color: #315b3c;
+    background: #17251b;
+    color: #8ed39d;
+  }
+
+  .el-alert--error {
+    border-color: #673535;
+    background: #291919;
+    color: #f09b9b;
+  }
+
+  .el-alert--info {
+    border-color: #4a4a4a;
+    background: #242424;
+    color: #d0d0d0;
+  }
+
+  .login-brand-panel {
+    background: #111;
+    color: var(--color-text);
+  }
+
+  .login-brand-panel p {
+    color: var(--color-text-secondary);
+  }
 }
 
 html,
@@ -312,7 +511,7 @@ a[href] {
   display: flex;
   align-items: center;
   gap: 3px;
-  padding: 3px 13px 3px 6px;
+  padding: 3px 8px;
   border-color: color-mix(in srgb, var(--color-primary) 22%, var(--color-border));
   background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
   transition: background 180ms ease, border-color 180ms ease;
