@@ -48,6 +48,8 @@ const loading = ref(false)
 const errorMessage = ref('')
 const isMobile = computed(() => width.value < 768)
 const currentStudyId = computed(() => studyStore.currentStudyId)
+const canCreateSubject = computed(() => studyStore.can('subject.create'))
+const canExport = computed(() => studyStore.can('export.execute'))
 
 const statusOptions = computed<Array<{ value: SubjectStatus; label: string }>>(() => [
   { value: 'screening', label: t('subjects.statuses.screening') },
@@ -140,10 +142,14 @@ onMounted(load)
         <el-option v-for="site in sites" :key="site.id" :label="site.name" :value="site.id" />
       </el-select>
       <span class="toolbar-spacer" />
-      <el-button v-if="!isMobile" @click="router.push('/exports')">
+      <el-button v-if="!isMobile && canExport" @click="router.push('/exports')">
         {{ t('subjects.export') }}
       </el-button>
-      <el-button type="primary" @click="router.push('/subjects/new-screening')">
+      <el-button
+        v-if="canCreateSubject"
+        type="primary"
+        @click="router.push('/subjects/new-screening')"
+      >
         {{ t('subjects.newScreening') }}
       </el-button>
     </div>
