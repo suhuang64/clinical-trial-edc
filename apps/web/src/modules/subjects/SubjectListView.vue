@@ -310,6 +310,22 @@ onMounted(load)
 .subject-card dd {
   margin: 0;
 }
+.subject-card :deep(.van-button) {
+  display: flex;
+  width: calc(50% + 11px);
+  min-width: 0;
+  min-height: 44px;
+  height: 44px;
+  margin: 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-primary);
+  color: var(--color-background);
+  font-size: 14px;
+  font-weight: 600;
+}
 @media (max-width: 1100px) {
   .subject-toolbar {
     grid-template-columns: minmax(200px, 1fr) 140px 180px auto auto;

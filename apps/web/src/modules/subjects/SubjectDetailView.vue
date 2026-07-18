@@ -1686,6 +1686,10 @@ watch(subjectId, load, { immediate: true })
   .record-actions {
     justify-content: flex-start;
   }
+  .record-actions .el-button {
+    min-width: 96px;
+    font-size: 14px;
+  }
   .events-header,
   .event-title-row {
     align-items: flex-start;
