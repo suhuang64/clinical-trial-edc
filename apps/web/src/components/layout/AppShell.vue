@@ -197,13 +197,19 @@ onMounted(() => studies.load())
           v-for="item in desktopNavigation"
           :key="item.key"
           :to="item.path"
-          class="nav-item"
-          :class="{ active: activeNav === item.key }"
-          :aria-label="t(`nav.${item.key}`)"
-          @click.prevent="navigate(item)"
+          custom
+          v-slot="{ href }"
         >
-          <el-icon><component :is="item.icon" /></el-icon>
-          <span v-if="!sidebarCollapsed">{{ t(`nav.${item.key}`) }}</span>
+          <a
+            :href="href"
+            class="nav-item"
+            :class="{ active: activeNav === item.key }"
+            :aria-label="t(`nav.${item.key}`)"
+            @click.prevent="navigate(item)"
+          >
+            <el-icon><component :is="item.icon" /></el-icon>
+            <span v-if="!sidebarCollapsed">{{ t(`nav.${item.key}`) }}</span>
+          </a>
         </RouterLink>
       </nav>
       <button

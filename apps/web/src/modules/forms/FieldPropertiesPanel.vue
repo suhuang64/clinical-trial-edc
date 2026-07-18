@@ -4,7 +4,13 @@ import type { FormField, FormType } from '@edc/contracts'
 import { useI18n } from 'vue-i18n'
 
 const field = defineModel<FormField | null>({ required: true })
-const props = defineProps<{ fields: FormField[]; keyLocked: boolean; formType: FormType }>()
+const emit = defineEmits<{ keyChanged: [previous: string, next: string] }>()
+const props = defineProps<{
+  fields: FormField[]
+  keyLocked: boolean
+  randomizationLocked: boolean
+  formType: FormType
+}>()
 const { t } = useI18n()
 
 const optionTypes = new Set(['radio', 'checkbox', 'select', 'scale'])
@@ -75,6 +81,13 @@ function addOption() {
   })
 }
 
+function updateFieldKey(next: string) {
+  if (!field.value || field.value.key === next) return
+  const previous = field.value.key
+  field.value.key = next
+  emit('keyChanged', previous, next)
+}
+
 function addVisibilityRule() {
   if (!field.value || !referenceFields.value.length) return
   field.value.visibility ??= { logic: 'and', rules: [] }
@@ -89,12 +102,19 @@ function addVisibilityRule() {
 <template>
   <div v-if="field" class="properties-panel">
     <h3>{{ t('formDesigner.properties.title') }}</h3>
-    <el-form label-position="top">
+    <p v-if="randomizationLocked" class="randomization-lock-hint">
+      {{ t('formDesigner.properties.randomizationLocked') }}
+    </p>
+    <el-form label-position="top" :disabled="randomizationLocked">
       <el-form-item :label="t('formDesigner.properties.label')" required>
         <el-input v-model="field.label" maxlength="200" />
       </el-form-item>
       <el-form-item :label="t('formDesigner.properties.key')" required>
-        <el-input v-model="field.key" :disabled="keyLocked" />
+        <el-input
+          :model-value="field.key"
+          :disabled="keyLocked"
+          @input="updateFieldKey(String($event))"
+        />
         <div class="muted-text">{{ t('formDesigner.properties.keyLocked') }}</div>
       </el-form-item>
       <el-form-item :label="t('formDesigner.properties.helpText')">
@@ -120,7 +140,11 @@ function addVisibilityRule() {
         <el-checkbox
           v-if="props.formType === 'screening'"
           v-model="field.randomizationFactor"
-          :disabled="!['text', 'number', 'date', 'datetime', 'radio', 'select', 'switch', 'scale'].includes(field.type)"
+          :disabled="
+            !['text', 'number', 'date', 'datetime', 'radio', 'select', 'switch', 'scale'].includes(
+              field.type,
+            )
+          "
           @change="field.randomizationFactor && (field.required = true)"
         >
           {{ t('formDesigner.properties.randomizationFactor') }}
@@ -289,6 +313,10 @@ function addVisibilityRule() {
 <style scoped>
 .properties-panel h3 {
   margin-top: 0;
+}
+.randomization-lock-hint {
+  margin: 0 0 14px;
+  color: var(--color-warning);
 }
 .switch-grid {
   display: grid;

@@ -1402,6 +1402,12 @@ describe('API 基础能力', () => {
     })
     expect(createResponse.statusCode).toBe(201)
     const formId = createResponse.json().id as string
+    const generatedFormCode = await app!.inject({
+      method: 'GET',
+      url: `/api/v1/studies/${studyId}/forms/${formId}`,
+      headers,
+    })
+    expect(generatedFormCode.json().form.code).toBe(formId)
 
     const firstPublish = await app!.inject({
       method: 'POST',
@@ -2074,10 +2080,7 @@ describe('API 基础能力', () => {
       payload: { source: importSource },
     })
     expect(duplicatePreview.statusCode).toBe(200)
-    expect(duplicatePreview.json()).toMatchObject({ canImport: false })
-    expect(duplicatePreview.json().issues).toEqual(
-      expect.arrayContaining([expect.objectContaining({ code: 'FORM_CODE_EXISTS' })]),
-    )
+    expect(duplicatePreview.json()).toMatchObject({ canImport: true })
 
     const missingVisitPreview = await app!.inject({
       method: 'POST',
@@ -2276,6 +2279,173 @@ describe('API 基础能力', () => {
     expect(defaultStudyList.json().items).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ id: studyId })]),
     )
+  })
+
+  it('锁定筛选表单及已启用的随机化因素', async () => {
+    const headers = { cookie: sessionCookie, 'x-csrf-token': csrfToken }
+    const studyResponse = await app!.inject({
+      method: 'POST',
+      url: '/api/v1/studies',
+      headers,
+      payload: { protocolCode: `LOCK-${randomUUID()}`, name: '筛选表单锁定验收' },
+    })
+    expect(studyResponse.statusCode).toBe(201)
+    const studyId = studyResponse.json().id as string
+    const definition = {
+      schemaVersion: 1,
+      sections: [],
+      retiredFieldKeys: [],
+      fields: [
+        {
+          key: 'sex',
+          type: 'radio',
+          label: '性别',
+          required: true,
+          randomizationFactor: true,
+          options: [
+            { value: 'male', label: '男' },
+            { value: 'female', label: '女' },
+          ],
+        },
+      ],
+    }
+    const invalidBehavior = await app!.inject({
+      method: 'POST',
+      url: `/api/v1/studies/${studyId}/forms`,
+      headers,
+      payload: {
+        code: 'SCREENING_INVALID',
+        name: '错误筛选表单',
+        formType: 'screening',
+        repeatable: true,
+        bindVisits: false,
+        visitIds: [],
+        definition,
+      },
+    })
+    expect(invalidBehavior.statusCode).toBe(400)
+    expect(invalidBehavior.json().code).toBe('SCREENING_FORM_RESTRICTIONS')
+
+    const createForm = await app!.inject({
+      method: 'POST',
+      url: `/api/v1/studies/${studyId}/forms`,
+      headers,
+      payload: {
+        code: 'SCREENING',
+        name: '筛选表单',
+        formType: 'screening',
+        repeatable: false,
+        bindVisits: false,
+        visitIds: [],
+        definition,
+      },
+    })
+    expect(createForm.statusCode).toBe(201)
+    const formId = createForm.json().id as string
+    const publish = await app!.inject({
+      method: 'POST',
+      url: `/api/v1/studies/${studyId}/forms/${formId}/publish`,
+      headers,
+    })
+    expect(publish.statusCode).toBe(200)
+    await waitForMigration(studyId, formId, publish.json().migrationJobId, headers)
+
+    const changeType = await app!.inject({
+      method: 'PUT',
+      url: `/api/v1/studies/${studyId}/forms/${formId}/draft`,
+      headers,
+      payload: {
+        code: 'SCREENING',
+        name: '筛选表单',
+        formType: 'baseline',
+        repeatable: false,
+        bindVisits: false,
+        visitIds: [],
+        definition,
+      },
+    })
+    expect(changeType.statusCode).toBe(409)
+    expect(changeType.json().code).toBe('SCREENING_FORM_PROTECTED')
+    const deleteForm = await app!.inject({
+      method: 'DELETE',
+      url: `/api/v1/studies/${studyId}/forms/${formId}`,
+      headers,
+    })
+    expect(deleteForm.statusCode).toBe(409)
+    expect(deleteForm.json().code).toBe('SCREENING_FORM_PROTECTED')
+
+    const scheme = await app!.inject({
+      method: 'PUT',
+      url: `/api/v1/studies/${studyId}/randomization/scheme`,
+      headers,
+      payload: {
+        name: '按性别分层',
+        method: 'stratified_block',
+        arms: [
+          { id: 'A', label: 'A组', weight: 1 },
+          { id: 'B', label: 'B组', weight: 1 },
+        ],
+        config: { blockSizes: [4], factorKeys: ['sex'] },
+      },
+    })
+    expect(scheme.statusCode).toBe(200)
+    const detail = await app!.inject({
+      method: 'GET',
+      url: `/api/v1/studies/${studyId}/forms/${formId}`,
+      headers,
+    })
+    expect(detail.statusCode).toBe(200)
+    expect(detail.json().randomizationFactorKeys).toContain('sex')
+
+    const changeFactor = await app!.inject({
+      method: 'PUT',
+      url: `/api/v1/studies/${studyId}/forms/${formId}/draft`,
+      headers,
+      payload: {
+        code: 'SCREENING',
+        name: '筛选表单',
+        formType: 'screening',
+        repeatable: false,
+        bindVisits: false,
+        visitIds: [],
+        definition: {
+          ...definition,
+          fields: [{ ...definition.fields[0], label: '生理性别' }],
+        },
+      },
+    })
+    expect(changeFactor.statusCode).toBe(409)
+    expect(changeFactor.json().code).toBe('RANDOMIZATION_FACTOR_LOCKED')
+
+    const activateScheme = await app!.inject({
+      method: 'POST',
+      url: `/api/v1/studies/${studyId}/randomization/scheme/activate`,
+      headers,
+    })
+    expect(activateScheme.statusCode).toBe(200)
+    const formList = await app!.inject({
+      method: 'GET',
+      url: `/api/v1/studies/${studyId}/forms`,
+      headers,
+    })
+    expect(formList.json().items).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: formId, designer_locked: 1 })]),
+    )
+    const saveAfterActivation = await app!.inject({
+      method: 'PUT',
+      url: `/api/v1/studies/${studyId}/forms/${formId}/draft`,
+      headers,
+      payload: {
+        name: '筛选表单',
+        formType: 'screening',
+        repeatable: false,
+        bindVisits: false,
+        visitIds: [],
+        definition,
+      },
+    })
+    expect(saveAfterActivation.statusCode).toBe(409)
+    expect(saveAfterActivation.json().code).toBe('SCREENING_FORM_RANDOMIZATION_LOCKED')
   })
 
   it('千条数据的导出创建与表单迁移均在后台执行', async () => {

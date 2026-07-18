@@ -39,9 +39,12 @@ interface VersionRow {
   schema_checksum: string
 }
 
-const copyFormSchema = z.object({
-  code: z.string().trim().min(1).max(80),
-  name: z.string().trim().min(1).max(200),
+const copyFormSchema = z.object({ name: z.string().trim().min(1).max(200) })
+const createFormMutationSchema = createFormSchema.omit({ code: true }).extend({
+  code: z.string().trim().min(1).max(80).optional(),
+})
+const saveFormDraftMutationSchema = saveFormDraftSchema.omit({ code: true }).extend({
+  code: z.string().trim().min(1).max(80).optional(),
 })
 const importPreviewSchema = z.object({
   source: z.unknown(),
@@ -326,7 +329,7 @@ function normalizeImportedForm(
     root.definition ?? draftVersion?.definition ?? activeVersion?.definition ?? form.definition
   const { visitIds, missingVisitCodes } = resolveImportedVisitIds(studyId, form)
   const candidate = {
-    code: overrides?.code ?? form.code,
+    code: overrides?.code ?? form.code ?? randomUUID(),
     name: overrides?.name ?? form.name,
     formType: form.formType ?? form.form_type,
     repeatable: Boolean(form.repeatable),
@@ -361,17 +364,6 @@ function buildImportPreview(
     issues.push({
       code: 'FORM_VISIT_CODE_MISSING',
       message: `当前研究缺少访视：${normalized.missingVisitCodes.join('、')}`,
-      severity: 'error',
-    })
-  }
-  if (
-    sqlite
-      .prepare('SELECT id FROM forms WHERE study_id = ? AND code = ?')
-      .get(studyId, normalized.data.code)
-  ) {
-    issues.push({
-      code: 'FORM_CODE_EXISTS',
-      message: '该研究中已存在相同表单编号，请修改后重新校验',
       severity: 'error',
     })
   }
@@ -645,6 +637,40 @@ function latestDraft(formId: string) {
     .get(formId) as VersionRow | undefined
 }
 
+function randomizationFactorKeys(studyId: string) {
+  const row = sqlite
+    .prepare(
+      `SELECT config_json FROM randomization_schemes
+       WHERE study_id = ? AND status IN ('draft', 'active', 'frozen')
+       LIMIT 1`,
+    )
+    .get(studyId) as { config_json: string } | undefined
+  if (!row) return new Set<string>()
+  try {
+    const config = JSON.parse(row.config_json) as { factorKeys?: unknown }
+    return new Set(
+      Array.isArray(config.factorKeys)
+        ? config.factorKeys.filter(
+            (key): key is string => typeof key === 'string' && key !== 'site',
+          )
+        : [],
+    )
+  } catch {
+    return new Set<string>()
+  }
+}
+
+function screeningDesignerLocked(studyId: string) {
+  return Boolean(
+    sqlite
+      .prepare(
+        `SELECT 1 FROM randomization_schemes
+         WHERE study_id = ? AND status IN ('active', 'frozen') LIMIT 1`,
+      )
+      .get(studyId),
+  )
+}
+
 function nextVersionNumber(formId: string) {
   const row = sqlite
     .prepare(
@@ -713,7 +739,11 @@ export const formRoutes: FastifyPluginAsync = async (app) => {
                 draft.id AS draft_version_id,
                 draft.version_number AS draft_version_number,
                 draft.status AS draft_version_status,
-                (SELECT COUNT(*) FROM data_records dr WHERE dr.study_id = f.study_id AND dr.form_id = f.id) AS record_count
+                (SELECT COUNT(*) FROM data_records dr WHERE dr.study_id = f.study_id AND dr.form_id = f.id) AS record_count,
+                CASE WHEN f.form_type = 'screening' AND EXISTS (
+                  SELECT 1 FROM randomization_schemes rs
+                  WHERE rs.study_id = f.study_id AND rs.status IN ('active', 'frozen')
+                ) THEN 1 ELSE 0 END AS designer_locked
          FROM forms f
          LEFT JOIN form_versions active ON active.id = f.active_version_id
          LEFT JOIN form_versions draft ON draft.id = (
@@ -812,12 +842,22 @@ export const formRoutes: FastifyPluginAsync = async (app) => {
     }
     if (!(await verifyCsrf(request, reply))) return
     if (!(await requireStudyStatus(studyId, ['draft', 'active'], request, reply))) return
-    const parsed = createFormSchema.safeParse(request.body)
+    const parsed = createFormMutationSchema.safeParse(request.body)
     if (!parsed.success) {
       return reply.code(400).send({
         code: 'VALIDATION_ERROR',
         message: '表单定义不合法',
         details: parsed.error.flatten(),
+        requestId: request.id,
+      })
+    }
+    if (
+      parsed.data.formType === 'screening' &&
+      (parsed.data.repeatable || parsed.data.bindVisits || parsed.data.visitIds.length)
+    ) {
+      return reply.code(400).send({
+        code: 'SCREENING_FORM_RESTRICTIONS',
+        message: '筛选表单不允许重复录入或绑定访视时间点',
         requestId: request.id,
       })
     }
@@ -841,20 +881,10 @@ export const formRoutes: FastifyPluginAsync = async (app) => {
           requestId: request.id,
         })
     }
-    const duplicate = sqlite
-      .prepare('SELECT id FROM forms WHERE study_id = ? AND code = ?')
-      .get(studyId, parsed.data.code)
-    if (duplicate) {
-      return reply.code(409).send({
-        code: 'FORM_CODE_EXISTS',
-        message: '该研究中已存在相同表单编号',
-        requestId: request.id,
-      })
-    }
-
     const definition = parsed.data.definition
     const issues = validateFormDefinition(definition)
     const id = randomUUID()
+    const code = id
     const versionId = randomUUID()
     const now = new Date().toISOString()
     sqlite.transaction(() => {
@@ -867,7 +897,7 @@ export const formRoutes: FastifyPluginAsync = async (app) => {
         .run(
           id,
           studyId,
-          parsed.data.code,
+          code,
           parsed.data.name,
           parsed.data.formType,
           Number(parsed.data.repeatable),
@@ -902,6 +932,7 @@ export const formRoutes: FastifyPluginAsync = async (app) => {
       action: importFormat ? 'form.imported' : 'form.created',
       after: {
         ...parsed.data,
+        code,
         definition: '[FORM_SCHEMA]',
         ...(importFormat ? { importFormat } : {}),
       },
@@ -1051,6 +1082,9 @@ export const formRoutes: FastifyPluginAsync = async (app) => {
         ? { ...draftVersion, definition: parseDefinition(draftVersion.schema_json) }
         : null,
       definition: selectedVersion ? parseDefinition(selectedVersion.schema_json) : null,
+      randomizationFactorKeys:
+        form.form_type === 'screening' ? [...randomizationFactorKeys(studyId)] : [],
+      designerLocked: form.form_type === 'screening' ? screeningDesignerLocked(studyId) : false,
     }
   })
 
@@ -1065,6 +1099,13 @@ export const formRoutes: FastifyPluginAsync = async (app) => {
       return reply
         .code(404)
         .send({ code: 'FORM_NOT_FOUND', message: '表单不存在', requestId: request.id })
+    if (form.form_type === 'screening') {
+      return reply.code(409).send({
+        code: 'SCREENING_FORM_PROTECTED',
+        message: '筛选表单不能删除',
+        requestId: request.id,
+      })
+    }
 
     const recordCount = (
       sqlite
@@ -1123,7 +1164,14 @@ export const formRoutes: FastifyPluginAsync = async (app) => {
       return reply
         .code(404)
         .send({ code: 'FORM_NOT_FOUND', message: '表单不存在', requestId: request.id })
-    const parsed = saveFormDraftSchema.safeParse(request.body)
+    if (form.form_type === 'screening' && screeningDesignerLocked(studyId)) {
+      return reply.code(409).send({
+        code: 'SCREENING_FORM_RANDOMIZATION_LOCKED',
+        message: '随机化方案已启用，筛选表单不能再修改或发布',
+        requestId: request.id,
+      })
+    }
+    const parsed = saveFormDraftMutationSchema.safeParse(request.body)
     if (!parsed.success) {
       return reply.code(400).send({
         code: 'VALIDATION_ERROR',
@@ -1131,6 +1179,39 @@ export const formRoutes: FastifyPluginAsync = async (app) => {
         details: parsed.error.flatten(),
         requestId: request.id,
       })
+    }
+    const changingToScreening = parsed.data.formType === 'screening'
+    if (form.form_type === 'screening' && !changingToScreening) {
+      return reply.code(409).send({
+        code: 'SCREENING_FORM_PROTECTED',
+        message: '筛选表单不能修改为其他类型',
+        requestId: request.id,
+      })
+    }
+    if (
+      changingToScreening &&
+      (parsed.data.repeatable || parsed.data.bindVisits || parsed.data.visitIds.length)
+    ) {
+      return reply.code(400).send({
+        code: 'SCREENING_FORM_RESTRICTIONS',
+        message: '筛选表单不允许重复录入或绑定访视时间点',
+        requestId: request.id,
+      })
+    }
+    if (changingToScreening && form.form_type !== 'screening') {
+      const screeningDuplicate = sqlite
+        .prepare(
+          `SELECT id FROM forms
+           WHERE study_id = ? AND form_type = 'screening' AND id <> ?`,
+        )
+        .get(studyId, formId)
+      if (screeningDuplicate) {
+        return reply.code(409).send({
+          code: 'SCREENING_FORM_EXISTS',
+          message: '每个研究只能设计一份筛选表单',
+          requestId: request.id,
+        })
+      }
     }
     const visitError = validateVisitConfiguration(
       studyId,
@@ -1141,20 +1222,28 @@ export const formRoutes: FastifyPluginAsync = async (app) => {
       return reply
         .code(400)
         .send({ code: 'FORM_VISIT_INVALID', message: visitError, requestId: request.id })
-    const codeConflict = sqlite
-      .prepare('SELECT id FROM forms WHERE study_id = ? AND code = ? AND id <> ?')
-      .get(studyId, parsed.data.code, formId)
-    if (codeConflict) {
-      return reply.code(409).send({
-        code: 'FORM_CODE_EXISTS',
-        message: '该研究中已存在相同表单编号',
-        requestId: request.id,
-      })
-    }
-
     const active = versionById(form.active_version_id)
     const previous = active ? parseDefinition(active.schema_json) : null
     const definition = normalizeRetiredKeys(previous, parsed.data.definition)
+    const lockedFactorKeys = randomizationFactorKeys(studyId)
+    if ((form.form_type === 'screening' || changingToScreening) && lockedFactorKeys.size) {
+      const persistedVersion = latestDraft(formId) ?? active
+      const persistedDefinition = persistedVersion
+        ? parseDefinition(persistedVersion.schema_json)
+        : null
+      const changedFactor = [...lockedFactorKeys].find((key) => {
+        const before = persistedDefinition?.fields.find((field) => field.key === key)
+        const after = definition.fields.find((field) => field.key === key)
+        return !before || !after || JSON.stringify(before) !== JSON.stringify(after)
+      })
+      if (changedFactor) {
+        return reply.code(409).send({
+          code: 'RANDOMIZATION_FACTOR_LOCKED',
+          message: `随机化分层因素“${changedFactor}”已锁定，不能修改或删除`,
+          requestId: request.id,
+        })
+      }
+    }
     const issues = [
       ...validateFormDefinition(definition),
       ...analyzeFormCompatibility(previous, definition),
@@ -1170,7 +1259,7 @@ export const formRoutes: FastifyPluginAsync = async (app) => {
            WHERE study_id = ? AND id = ?`,
         )
         .run(
-          parsed.data.code,
+          form.code,
           parsed.data.name,
           parsed.data.formType,
           Number(parsed.data.repeatable),
@@ -1232,6 +1321,13 @@ export const formRoutes: FastifyPluginAsync = async (app) => {
       return reply
         .code(404)
         .send({ code: 'FORM_NOT_FOUND', message: '表单不存在', requestId: request.id })
+    if (form.form_type === 'screening' && screeningDesignerLocked(studyId)) {
+      return reply.code(409).send({
+        code: 'SCREENING_FORM_RANDOMIZATION_LOCKED',
+        message: '随机化方案已启用，筛选表单不能再修改或发布',
+        requestId: request.id,
+      })
+    }
     const draft = latestDraft(formId)
     if (!draft) {
       return reply.code(404).send({
@@ -1467,17 +1563,6 @@ export const formRoutes: FastifyPluginAsync = async (app) => {
           requestId: request.id,
         })
     }
-    if (
-      sqlite
-        .prepare('SELECT id FROM forms WHERE study_id = ? AND code = ?')
-        .get(studyId, parsed.data.code)
-    ) {
-      return reply.code(409).send({
-        code: 'FORM_CODE_EXISTS',
-        message: '该研究中已存在相同表单编号',
-        requestId: request.id,
-      })
-    }
     const sourceVersion = latestDraft(formId) ?? versionById(source.active_version_id)
     if (!sourceVersion) {
       return reply.code(409).send({
@@ -1499,7 +1584,7 @@ export const formRoutes: FastifyPluginAsync = async (app) => {
         .run(
           newFormId,
           studyId,
-          parsed.data.code,
+          newFormId,
           parsed.data.name,
           source.form_type,
           source.repeatable,

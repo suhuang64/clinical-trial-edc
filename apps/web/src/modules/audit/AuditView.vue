@@ -66,6 +66,7 @@ const actionLabels = computed<Record<string, string>>(() => ({
   'file.deleted': t('audit.actions.fileDeleted'),
   'form.published': t('audit.actions.formPublished'),
   'form.created': t('audit.actions.formCreated'),
+  'form.deleted': t('audit.actions.formDeleted'),
   'form.record_migrated': t('audit.actions.formRecordMigrated'),
   'form.migration_failed': t('audit.actions.formMigrationFailed'),
   'export.completed': t('audit.actions.exportCompleted'),

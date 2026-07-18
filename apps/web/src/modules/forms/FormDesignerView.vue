@@ -42,6 +42,8 @@ interface FormDetailResponse {
   activeVersion: { version_number: number; definition: FormDefinition } | null
   draftVersion: { version_number: number; definition: FormDefinition } | null
   definition: FormDefinition
+  randomizationFactorKeys: string[]
+  designerLocked: boolean
 }
 
 const route = useRoute()
@@ -63,8 +65,11 @@ const issues = ref<ValidationIssue[]>([])
 const activeVersionNumber = ref<number | null>(null)
 const draftVersionNumber = ref(1)
 const publishedKeys = ref(new Set<string>())
+const randomizationLockedKeys = ref(new Set<string>())
+const designerLocked = ref(false)
+const leavePromptOpen = ref(false)
+const leaveConfirmed = ref(false)
 const metadata = reactive({
-  code: '',
   name: t('formDesigner.unnamedForm'),
   formType: 'custom' as FormType,
   repeatable: false,
@@ -90,6 +95,9 @@ const selectedField = computed<FormField | null>({
 })
 const selectedKeyLocked = computed(() =>
   Boolean(selectedField.value && publishedKeys.value.has(selectedField.value.key)),
+)
+const selectedRandomizationLocked = computed(() =>
+  Boolean(selectedField.value && randomizationLockedKeys.value.has(selectedField.value.key)),
 )
 const versionLabel = computed(() =>
   activeVersionNumber.value
@@ -170,6 +178,7 @@ function addField(type: FieldType) {
 }
 
 function moveField(index: number, direction: -1 | 1) {
+  if (isRandomizationLocked(definition.value.fields[index])) return
   const target = index + direction
   if (target < 0 || target >= definition.value.fields.length) return
   const [field] = definition.value.fields.splice(index, 1)
@@ -178,7 +187,7 @@ function moveField(index: number, direction: -1 | 1) {
 
 function duplicateField(index: number) {
   const source = definition.value.fields[index]
-  if (!source) return
+  if (!source || isRandomizationLocked(source)) return
   const copy = structuredClone(source)
   copy.key = generateKey(source.type)
   copy.label = t('formDesigner.fieldCopy', { label: source.label })
@@ -188,7 +197,7 @@ function duplicateField(index: number) {
 
 function removeField(index: number) {
   const field = definition.value.fields[index]
-  if (!field) return
+  if (!field || isRandomizationLocked(field)) return
   definition.value.fields.splice(index, 1)
   if (
     publishedKeys.value.has(field.key) &&
@@ -201,9 +210,38 @@ function removeField(index: number) {
       definition.value.fields[index]?.key ?? definition.value.fields[index - 1]?.key ?? ''
 }
 
+function isRandomizationLocked(field: FormField | undefined | null) {
+  return Boolean(field && randomizationLockedKeys.value.has(field.key))
+}
+
+function handleFormTypeChange() {
+  if (metadata.formType !== 'screening') return
+  metadata.repeatable = false
+  metadata.bindVisits = false
+  metadata.visitIds = []
+}
+
+function handleFieldKeyChanged(previous: string, next: string) {
+  if (selectedKey.value === previous) selectedKey.value = next
+  for (const section of definition.value.sections) {
+    section.fieldKeys = section.fieldKeys.map((key) => (key === previous ? next : key))
+  }
+  for (const candidate of definition.value.fields) {
+    for (const group of [candidate.visibility, candidate.requiredWhen]) {
+      for (const rule of group?.rules ?? []) {
+        if (rule.fieldKey === previous) rule.fieldKey = next
+      }
+    }
+    if (candidate.calculation) {
+      candidate.calculation.dependencies = candidate.calculation.dependencies.map((key) =>
+        key === previous ? next : key,
+      )
+    }
+  }
+}
+
 function payload() {
   return {
-    code: metadata.code.trim(),
     name: metadata.name.trim(),
     formType: metadata.formType,
     repeatable: metadata.repeatable,
@@ -214,7 +252,7 @@ function payload() {
 }
 
 function validateMetadata() {
-  if (!metadata.code.trim() || !metadata.name.trim()) {
+  if (!metadata.name.trim()) {
     ElMessage.warning(t('formDesigner.metadataRequired'))
     settingsOpen.value = true
     return false
@@ -237,6 +275,7 @@ async function saveDraft(showSuccess = true) {
         { method: 'POST', body: JSON.stringify(payload()) },
       )
       issues.value = response.issues
+      dirty.value = false
       await router.replace(`/forms/designer/${response.id}`)
     } else {
       const response = await apiRequest<{
@@ -338,7 +377,6 @@ async function load() {
         `/studies/${studyStore.currentStudyId}/forms/${formId.value}`,
       )
       Object.assign(metadata, {
-        code: response.form.code,
         name: response.form.name,
         formType: response.form.form_type,
         repeatable: response.form.repeatable,
@@ -352,6 +390,9 @@ async function load() {
       publishedKeys.value = new Set(
         response.activeVersion?.definition.fields.map((field) => field.key) ?? [],
       )
+      randomizationLockedKeys.value = new Set(response.randomizationFactorKeys ?? [])
+      designerLocked.value = response.designerLocked
+      if (metadata.formType === 'screening') handleFormTypeChange()
       selectedKey.value = definition.value.fields[0]?.key ?? ''
     }
     dirty.value = false
@@ -359,6 +400,8 @@ async function load() {
     ElMessage.error(error instanceof ApiClientError ? error.message : t('formDesigner.loadFailed'))
   } finally {
     loading.value = false
+    await nextTick()
+    dirty.value = false
     ready.value = true
   }
 }
@@ -380,15 +423,23 @@ onMounted(() => {
 })
 onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
 onBeforeRouteLeave(async () => {
-  if (!dirty.value) return true
-  return ElMessageBox.confirm(t('formDesigner.unsavedWarning'), t('formDesigner.unsavedTitle'), {
-    type: 'warning',
-    confirmButtonText: t('formDesigner.discard'),
-    cancelButtonText: t('formDesigner.continueEditing'),
-  }).then(
-    () => true,
-    () => false,
-  )
+  if (!dirty.value || leaveConfirmed.value) return true
+  if (leavePromptOpen.value) return false
+  leavePromptOpen.value = true
+  try {
+    await ElMessageBox.confirm(t('formDesigner.unsavedWarning'), t('formDesigner.unsavedTitle'), {
+      type: 'warning',
+      confirmButtonText: t('formDesigner.discard'),
+      cancelButtonText: t('formDesigner.continueEditing'),
+    })
+    dirty.value = false
+    leaveConfirmed.value = true
+    return true
+  } catch {
+    return false
+  } finally {
+    leavePromptOpen.value = false
+  }
 })
 </script>
 
@@ -399,7 +450,12 @@ onBeforeRouteLeave(async () => {
     <span class="muted-text"
       >{{ versionLabel }}<template v-if="dirty"> · {{ t('formDesigner.unsaved') }}</template></span
     >
-    <el-button v-if="!isNew" type="danger" plain @click="deleteForm">
+    <el-button
+      v-if="!isNew && metadata.formType !== 'screening'"
+      type="danger"
+      plain
+      @click="deleteForm"
+    >
       {{ t('formDesigner.deleteForm') }}
     </el-button>
     <el-button @click="previewOpen = true">{{ t('formDesigner.previewAction') }}</el-button>
@@ -453,7 +509,6 @@ onBeforeRouteLeave(async () => {
         <div class="toolbar">
           <div>
             <strong>{{ metadata.name }}</strong>
-            <div class="muted-text">{{ metadata.code || t('formDesigner.noCode') }}</div>
           </div>
           <span class="toolbar-spacer" />
           <el-button
@@ -489,7 +544,7 @@ onBeforeRouteLeave(async () => {
               <div class="field-actions">
                 <el-button
                   size="small"
-                  :disabled="index === 0"
+                  :disabled="index === 0 || isRandomizationLocked(field)"
                   :aria-label="t('formDesigner.moveUpLabel', { field: field.label })"
                   @click.stop="moveField(index, -1)"
                 >
@@ -497,7 +552,7 @@ onBeforeRouteLeave(async () => {
                 </el-button>
                 <el-button
                   size="small"
-                  :disabled="index === definition.fields.length - 1"
+                  :disabled="index === definition.fields.length - 1 || isRandomizationLocked(field)"
                   :aria-label="t('formDesigner.moveDownLabel', { field: field.label })"
                   @click.stop="moveField(index, 1)"
                 >
@@ -505,6 +560,7 @@ onBeforeRouteLeave(async () => {
                 </el-button>
                 <el-button
                   size="small"
+                  :disabled="isRandomizationLocked(field)"
                   :aria-label="t('formDesigner.copyLabel', { field: field.label })"
                   @click.stop="duplicateField(index)"
                 >
@@ -514,6 +570,7 @@ onBeforeRouteLeave(async () => {
                   size="small"
                   type="danger"
                   plain
+                  :disabled="isRandomizationLocked(field)"
                   :aria-label="t('formDesigner.deleteLabel', { field: field.label })"
                   @click.stop="removeField(index)"
                 >
@@ -572,7 +629,9 @@ onBeforeRouteLeave(async () => {
           v-model="selectedField"
           :fields="definition.fields"
           :key-locked="selectedKeyLocked"
+          :randomization-locked="selectedRandomizationLocked"
           :form-type="metadata.formType"
+          @key-changed="handleFieldKeyChanged"
         />
       </aside>
     </section>
@@ -588,7 +647,9 @@ onBeforeRouteLeave(async () => {
       v-model="selectedField"
       :fields="definition.fields"
       :key-locked="selectedKeyLocked"
+      :randomization-locked="selectedRandomizationLocked"
       :form-type="metadata.formType"
+      @key-changed="handleFieldKeyChanged"
     />
   </el-drawer>
 
@@ -600,18 +661,16 @@ onBeforeRouteLeave(async () => {
   >
     <el-form label-position="top">
       <div class="settings-grid">
-        <el-form-item :label="t('formDesigner.settings.code')" required>
-          <el-input
-            v-model="metadata.code"
-            maxlength="80"
-            :disabled="Boolean(activeVersionNumber)"
-          />
-        </el-form-item>
         <el-form-item :label="t('formDesigner.settings.name')" required>
           <el-input v-model="metadata.name" maxlength="200" />
         </el-form-item>
         <el-form-item :label="t('formDesigner.settings.type')" required>
-          <el-select v-model="metadata.formType" style="width: 100%">
+          <el-select
+            v-model="metadata.formType"
+            style="width: 100%"
+            :disabled="metadata.formType === 'screening'"
+            @change="handleFormTypeChange"
+          >
             <el-option
               v-for="type in formTypeLabels"
               :key="type.value"
@@ -622,15 +681,18 @@ onBeforeRouteLeave(async () => {
         </el-form-item>
       </div>
       <el-divider>{{ t('formDesigner.settings.entryBehavior') }}</el-divider>
+      <p v-if="metadata.formType === 'screening'" class="muted-text">
+        {{ t('formDesigner.settings.screeningRestrictions') }}
+      </p>
       <div class="behavior-setting">
-        <el-switch v-model="metadata.repeatable" />
+        <el-switch v-model="metadata.repeatable" :disabled="metadata.formType === 'screening'" />
         <div>
           <strong>{{ t('formDesigner.settings.repeatable') }}</strong>
           <p class="muted-text">{{ t('formDesigner.settings.repeatableHint') }}</p>
         </div>
       </div>
       <div class="behavior-setting">
-        <el-switch v-model="metadata.bindVisits" />
+        <el-switch v-model="metadata.bindVisits" :disabled="metadata.formType === 'screening'" />
         <div>
           <strong>{{ t('formDesigner.settings.bindVisits') }}</strong>
           <p class="muted-text">{{ t('formDesigner.settings.bindVisitsHint') }}</p>

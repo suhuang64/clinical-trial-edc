@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import type { CreateFormInput } from '@edc/contracts'
@@ -20,6 +20,7 @@ interface FormRow {
   draft_version_number: number | null
   draft_version_status: 'draft' | 'failed' | null
   record_count: number
+  designer_locked: number
   updated_at: string
 }
 
@@ -87,7 +88,7 @@ const filteredForms = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase()
   if (!keyword) return forms.value
   return forms.value.filter((form) =>
-    `${form.code} ${form.name} ${typeLabels.value[form.form_type] ?? form.form_type}`
+    `${form.name} ${typeLabels.value[form.form_type] ?? form.form_type}`
       .toLocaleLowerCase()
       .includes(keyword),
   )
@@ -136,25 +137,12 @@ async function load() {
 
 async function copyForm(form: FormRow) {
   if (!currentStudyId.value) return
-  const result = await ElMessageBox.prompt(
-    t('formList.copyPrompt'),
-    t('formList.copyTitle', { name: form.name }),
-    {
-      inputValue: `${form.code}_COPY`,
-      inputPattern: /\S+/,
-      inputErrorMessage: t('formList.codeRequired'),
-      confirmButtonText: t('formList.next'),
-      cancelButtonText: t('common.cancel'),
-    },
-  ).catch(() => null)
-  if (!result) return
   try {
     const response = await apiRequest<{ id: string }>(
       `/studies/${currentStudyId.value}/forms/${form.id}/copy`,
       {
         method: 'POST',
         body: JSON.stringify({
-          code: result.value.trim(),
           name: t('formList.copyName', { name: form.name }),
         }),
       },
@@ -243,7 +231,7 @@ function migrationProgress(job: MigrationJob) {
   return Math.round((job.processed_records / job.total_records) * 100)
 }
 
-async function requestImportPreview(overrides?: { code: string; name: string }) {
+async function requestImportPreview(overrides?: { name: string }) {
   if (!currentStudyId.value || !importSource.value) return
   previewLoading.value = true
   try {
@@ -318,7 +306,6 @@ async function handleExcelImportFile(event: Event) {
 async function revalidateImport() {
   if (!importPreview.value) return
   await requestImportPreview({
-    code: importPreview.value.normalized.code,
     name: importPreview.value.normalized.name,
   })
 }
@@ -407,9 +394,7 @@ onBeforeUnmount(() => {
       <article v-for="form in filteredForms" :key="form.id" class="panel form-card">
         <header>
           <div>
-            <span class="muted-text"
-              >{{ typeLabels[form.form_type] ?? form.form_type }} · {{ form.code }}</span
-            >
+            <span class="muted-text">{{ typeLabels[form.form_type] ?? form.form_type }}</span>
             <h2>{{ form.name }}</h2>
           </div>
           <StatusPill
@@ -438,7 +423,13 @@ onBeforeUnmount(() => {
         <footer>
           <span class="muted-text">{{ formatDateTime(form.updated_at) }}</span>
           <div class="form-primary-actions">
-            <el-button link type="primary" @click="router.push(`/forms/designer/${form.id}`)">
+            <el-button
+              link
+              type="primary"
+              :disabled="Boolean(form.designer_locked)"
+              :title="form.designer_locked ? t('formList.designerLocked') : undefined"
+              @click="router.push(`/forms/designer/${form.id}`)"
+            >
               {{ t('formList.openDesigner') }}
             </el-button>
           </div>
@@ -488,9 +479,6 @@ onBeforeUnmount(() => {
           :closable="false"
         />
         <el-form label-position="top" class="import-form">
-          <el-form-item :label="t('formList.formCode')" required>
-            <el-input v-model="importPreview.normalized.code" maxlength="80" />
-          </el-form-item>
           <el-form-item :label="t('formList.formName')" required>
             <el-input v-model="importPreview.normalized.name" maxlength="200" />
           </el-form-item>
