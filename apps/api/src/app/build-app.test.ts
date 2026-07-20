@@ -307,7 +307,6 @@ describe('API 基础能力', () => {
     })
     expect(siteResponse.statusCode).toBe(201)
     const siteId = siteResponse.json().id as string
-    let siteName = siteResponse.json().name as string
     const writeBeforeStart = await app!.inject({
       method: 'POST',
       url: `/api/v1/studies/${studyId}/subjects`,
@@ -340,7 +339,7 @@ describe('API 基础能力', () => {
       },
     })
     expect(updateSite.statusCode).toBe(200)
-    siteName = updateSite.json().name as string
+    const siteName = updateSite.json().name as string
 
     const numberingConfiguration = {
       screening: { prefix: 'PRE-', padLength: 5 },

@@ -301,15 +301,64 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     if (!user) return
     if (!(await verifyCsrf(request, reply))) return
     const parsed = profileSchema.safeParse(request.body)
-    if (!parsed.success) return reply.code(400).send({ code: 'VALIDATION_ERROR', message: '个人信息格式不正确', details: parsed.error.flatten(), requestId: request.id })
+    if (!parsed.success)
+      return reply.code(400).send({
+        code: 'VALIDATION_ERROR',
+        message: '个人信息格式不正确',
+        details: parsed.error.flatten(),
+        requestId: request.id,
+      })
     const phone = parsed.data.phone.replace(/[\s()-]/g, '')
-    if (!/^\+?\d{6,20}$/.test(phone)) return reply.code(400).send({ code: 'VALIDATION_ERROR', message: '手机号码格式不正确', requestId: request.id })
+    if (!/^\+?\d{6,20}$/.test(phone))
+      return reply
+        .code(400)
+        .send({ code: 'VALIDATION_ERROR', message: '手机号码格式不正确', requestId: request.id })
     const email = parsed.data.email.trim().toLocaleLowerCase()
-    const duplicate = await db.selectFrom('users').select(['id']).where((b) => b.or([b('phone', '=', phone), b('email', '=', email)])).where('id', '!=', user.id).executeTakeFirst()
-    if (duplicate) return reply.code(409).send({ code: 'PROFILE_CONFLICT', message: '手机号码或邮箱已被使用', requestId: request.id })
-    await db.updateTable('users').set({ display_name: parsed.data.displayName, gender: parsed.data.gender, birth_date: parsed.data.birthDate, phone, email, organization: parsed.data.organization, updated_at: new Date().toISOString() }).where('id', '=', user.id).execute()
-    const updated = { ...user, displayName: parsed.data.displayName, gender: parsed.data.gender, birthDate: parsed.data.birthDate, phone, email, organization: parsed.data.organization }
-    await writeAudit({ requestId: request.id, actorUserId: user.id, objectType: 'user', objectId: user.id, action: 'user.profile_updated', before: { displayName: user.displayName }, after: parsed.data, ipAddress: request.ip, userAgent: request.headers['user-agent'] })
+    const duplicate = await db
+      .selectFrom('users')
+      .select(['id'])
+      .where((b) => b.or([b('phone', '=', phone), b('email', '=', email)]))
+      .where('id', '!=', user.id)
+      .executeTakeFirst()
+    if (duplicate)
+      return reply.code(409).send({
+        code: 'PROFILE_CONFLICT',
+        message: '手机号码或邮箱已被使用',
+        requestId: request.id,
+      })
+    await db
+      .updateTable('users')
+      .set({
+        display_name: parsed.data.displayName,
+        gender: parsed.data.gender,
+        birth_date: parsed.data.birthDate,
+        phone,
+        email,
+        organization: parsed.data.organization,
+        updated_at: new Date().toISOString(),
+      })
+      .where('id', '=', user.id)
+      .execute()
+    const updated = {
+      ...user,
+      displayName: parsed.data.displayName,
+      gender: parsed.data.gender,
+      birthDate: parsed.data.birthDate,
+      phone,
+      email,
+      organization: parsed.data.organization,
+    }
+    await writeAudit({
+      requestId: request.id,
+      actorUserId: user.id,
+      objectType: 'user',
+      objectId: user.id,
+      action: 'user.profile_updated',
+      before: { displayName: user.displayName },
+      after: parsed.data,
+      ipAddress: request.ip,
+      userAgent: request.headers['user-agent'],
+    })
     return { user: updated }
   })
 

@@ -239,88 +239,88 @@ onMounted(load)
   />
   <template v-else>
     <template v-if="!standaloneVisits">
-        <div class="toolbar">
-          <span class="muted-text">{{ t('sites.siteHint') }}</span>
-          <span class="toolbar-spacer" />
-          <el-button type="primary" @click="openCreateSite">
-            {{ t('sites.addSite') }}
-          </el-button>
-        </div>
-        <section v-loading="loading" class="site-grid">
-          <article v-for="site in sites" :key="site.id" class="panel site-card">
-            <header>
-              <div>
-                <h2>{{ site.name }}</h2>
-              </div>
-              <StatusPill
-                :tone="site.status === 'active' ? 'success' : 'neutral'"
-                :label="site.status === 'active' ? t('sites.active') : t('sites.disabled')"
-              />
-            </header>
-            <dl>
-              <div>
-                <dt>{{ t('sites.principalInvestigator') }}</dt>
-                <dd>{{ site.principal_investigator || t('sites.notSet') }}</dd>
-              </div>
-              <div>
-                <dt>{{ t('sites.contact') }}</dt>
-                <dd>{{ site.contact_phone || site.contact_email || t('sites.notSet') }}</dd>
-              </div>
-              <div>
-                <dt>{{ t('sites.enrollmentProgress') }}</dt>
-                <dd>{{ site.enrolled_count }} / {{ site.enrollment_target }}</dd>
-              </div>
-            </dl>
-            <el-progress
-              :percentage="
-                site.enrollment_target
-                  ? Math.min(100, Math.round((site.enrolled_count / site.enrollment_target) * 100))
-                  : 0
-              "
-            />
-            <footer>
-              <el-button @click="openEditSite(site)">{{ t('sites.edit') }}</el-button>
-              <el-button
-                :type="site.status === 'active' ? 'danger' : 'primary'"
-                plain
-                @click="toggleSite(site)"
-              >
-                {{ site.status === 'active' ? t('sites.disabled') : t('sites.active') }}
-              </el-button>
-            </footer>
-          </article>
-          <div v-if="!loading && !sites.length" class="panel empty-state">
+      <div class="toolbar">
+        <span class="muted-text">{{ t('sites.siteHint') }}</span>
+        <span class="toolbar-spacer" />
+        <el-button type="primary" @click="openCreateSite">
+          {{ t('sites.addSite') }}
+        </el-button>
+      </div>
+      <section v-loading="loading" class="site-grid">
+        <article v-for="site in sites" :key="site.id" class="panel site-card">
+          <header>
             <div>
-              <h2>{{ t('sites.noSites') }}</h2>
-              <p class="muted-text">{{ t('sites.noSitesHint') }}</p>
+              <h2>{{ site.name }}</h2>
             </div>
+            <StatusPill
+              :tone="site.status === 'active' ? 'success' : 'neutral'"
+              :label="site.status === 'active' ? t('sites.active') : t('sites.disabled')"
+            />
+          </header>
+          <dl>
+            <div>
+              <dt>{{ t('sites.principalInvestigator') }}</dt>
+              <dd>{{ site.principal_investigator || t('sites.notSet') }}</dd>
+            </div>
+            <div>
+              <dt>{{ t('sites.contact') }}</dt>
+              <dd>{{ site.contact_phone || site.contact_email || t('sites.notSet') }}</dd>
+            </div>
+            <div>
+              <dt>{{ t('sites.enrollmentProgress') }}</dt>
+              <dd>{{ site.enrolled_count }} / {{ site.enrollment_target }}</dd>
+            </div>
+          </dl>
+          <el-progress
+            :percentage="
+              site.enrollment_target
+                ? Math.min(100, Math.round((site.enrolled_count / site.enrollment_target) * 100))
+                : 0
+            "
+          />
+          <footer>
+            <el-button @click="openEditSite(site)">{{ t('sites.edit') }}</el-button>
+            <el-button
+              :type="site.status === 'active' ? 'danger' : 'primary'"
+              plain
+              @click="toggleSite(site)"
+            >
+              {{ site.status === 'active' ? t('sites.disabled') : t('sites.active') }}
+            </el-button>
+          </footer>
+        </article>
+        <div v-if="!loading && !sites.length" class="panel empty-state">
+          <div>
+            <h2>{{ t('sites.noSites') }}</h2>
+            <p class="muted-text">{{ t('sites.noSitesHint') }}</p>
           </div>
-        </section>
+        </div>
+      </section>
     </template>
     <template v-else>
-        <div class="toolbar">
-          <span class="muted-text">{{ t('sites.visitHint') }}</span>
-          <span class="toolbar-spacer" />
-          <el-button type="primary" @click="openCreateVisit">
-            {{ t('sites.addVisit') }}
-          </el-button>
-        </div>
-        <section v-loading="loading" class="panel">
-          <el-table :data="visits" :empty-text="t('sites.noVisits')">
-            <el-table-column prop="sort_order" :label="t('sites.order')" width="90" />
-            <el-table-column prop="code" :label="t('sites.visitCode')" min-width="160" />
-            <el-table-column prop="name" :label="t('sites.visitName')" min-width="200" />
-            <el-table-column :label="t('sites.actions')" width="180">
-              <template #default="{ row }">
-                <el-button link type="primary" @click="openEditVisit(row)">
-                  {{ t('sites.edit') }} </el-button
-                ><el-button link type="danger" @click="deleteVisit(row)">
-                  {{ t('sites.delete') }}
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </section>
+      <div class="toolbar">
+        <span class="muted-text">{{ t('sites.visitHint') }}</span>
+        <span class="toolbar-spacer" />
+        <el-button type="primary" @click="openCreateVisit">
+          {{ t('sites.addVisit') }}
+        </el-button>
+      </div>
+      <section v-loading="loading" class="panel">
+        <el-table :data="visits" :empty-text="t('sites.noVisits')">
+          <el-table-column prop="sort_order" :label="t('sites.order')" width="90" />
+          <el-table-column prop="code" :label="t('sites.visitCode')" min-width="160" />
+          <el-table-column prop="name" :label="t('sites.visitName')" min-width="200" />
+          <el-table-column :label="t('sites.actions')" width="180">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="openEditVisit(row)">
+                {{ t('sites.edit') }} </el-button
+              ><el-button link type="danger" @click="deleteVisit(row)">
+                {{ t('sites.delete') }}
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </section>
     </template>
 
     <el-dialog

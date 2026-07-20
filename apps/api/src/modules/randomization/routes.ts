@@ -2,7 +2,6 @@ import { randomBytes, randomInt, randomUUID } from 'node:crypto'
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import {
-  DeterministicRandom,
   generatePermutedBlock,
   minimizationRandomization,
   simpleRandomization,

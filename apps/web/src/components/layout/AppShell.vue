@@ -195,10 +195,10 @@ onMounted(() => studies.load())
       <nav class="sidebar-nav" :aria-label="t('common.mainNavigation')">
         <RouterLink
           v-for="item in desktopNavigation"
+          v-slot="{ href }"
           :key="item.key"
           :to="item.path"
           custom
-          v-slot="{ href }"
         >
           <a
             :href="href"

@@ -72,7 +72,11 @@ export async function getAuthenticatedUser(
       'users.approval_status',
       'users.locale',
       'users.theme',
-      'users.gender', 'users.birth_date', 'users.phone', 'users.email', 'users.organization',
+      'users.gender',
+      'users.birth_date',
+      'users.phone',
+      'users.email',
+      'users.organization',
       'users.status',
       'sessions.expires_at',
     ])
