@@ -127,6 +127,9 @@ async function submit() {
 .login-preferences .el-select {
   width: 132px;
 }
+.login-preferences :deep(.el-select__wrapper) {
+  min-height: 44px;
+}
 .login-preferences .icon-button {
   min-width: 44px;
   min-height: 44px;
