@@ -1,6 +1,6 @@
 # OpenEDC
 
-OpenEDC 1.0.0 是面向多项目、多中心临床研究的轻量级电子数据采集系统（EDC）。系统支持研究项目、研究中心、成员权限、动态表单、受试者筛选与入组、随机化、随访数据录入、文件管理、数据导出、仪表盘和审计日志。
+OpenEDC 是面向多项目、多中心临床研究的轻量级电子数据采集系统（EDC）。系统支持研究项目、研究中心、成员权限、动态表单、受试者筛选与入组、随机化、随访数据录入、文件管理、数据导出、仪表盘和审计日志。
 
 技术栈：Vue 3、Element Plus、Vant、Node.js、Fastify、Kysely 和 SQLite。
 
@@ -11,49 +11,7 @@ OpenEDC 1.0.0 是面向多项目、多中心临床研究的轻量级电子数据
 - 生产环境需要一个 HTTPS 反向代理（例如 Nginx）
 - 生产环境只运行一个 API 进程和一个 SQLite 数据库
 
-项目依赖安装在项目目录中，不需要全局安装 npm 包。
-
-## 2. 环境配置
-
-开发和生产使用同一套数据库与文件目录，只通过两个环境文件区分运行模式：
-
-```text
-.env.development
-.env.production
-```
-
-两个文件的共同内容为：
-
-```text
-HOST=127.0.0.1
-PORT=3000
-
-DATABASE_PATH=./storage/data/edc.sqlite
-UPLOAD_ROOT=./storage/uploads
-QUARANTINE_ROOT=./storage/quarantine
-EXPORT_ROOT=./storage/exports
-
-SESSION_COOKIE_NAME=edc_session
-SESSION_TTL_HOURS=12
-```
-
-`.env.development` 另外设置：
-
-```text
-NODE_ENV=development
-TRUST_PROXY=false
-```
-
-`.env.production` 另外设置：
-
-```text
-NODE_ENV=production
-TRUST_PROXY=true
-```
-
-真实 `.env.development` 和 `.env.production` 已被 Git 忽略，不能提交到 GitHub。管理员密码不要写入环境文件；初始化管理员时通过当前命令临时传入 `EDC_ADMIN_PASSWORD`。
-
-## 3. 本地开发
+## 2. 本地开发
 
 第一次使用时，在项目根目录执行：
 
@@ -87,7 +45,7 @@ API：http://127.0.0.1:3000
 
 `npm run dev` 会自动加载 `.env.development`，同时启动 API 和 Vite 开发服务器。停止开发环境按 `Ctrl+C` 即可。
 
-## 4. 生产构建和启动
+## 3. 生产构建和启动
 
 在项目根目录执行：
 
@@ -105,8 +63,8 @@ npm run build
 ```zsh
 EDC_ADMIN_PASSWORD='至少12位的生产密码' \
   npm run admin:init -- \
-  --username pepper \
-  --name "辣椒小皇纸"
+  --username admin \
+  --name "系统管理员"
 ```
 
 启动生产 API：
@@ -127,72 +85,9 @@ curl http://127.0.0.1:3000/api/health
 { "status": "ok", "time": "2026-07-20T00:00:00.000Z" }
 ```
 
-## 5. Docker Nginx 部署
+## 4. OpenEDC 使用教程
 
-生产前端构建文件位于：
-
-```text
-apps/web/dist
-```
-
-如果 Nginx 运行在 Docker 中，需要把前端目录挂载到容器，例如：
-
-```text
-~/.nginx/openedc:/usr/share/nginx/html/openedc:ro
-```
-
-Nginx 的 OpenEDC server 至少需要包含：
-
-```nginx
-server {
-    listen 8011 ssl;
-    http2 on;
-    server_name edc.peppernotes.top;
-
-    ssl_certificate /etc/letsencrypt/live/peppernotes.top/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/peppernotes.top/privkey.pem;
-
-    root /usr/share/nginx/html/openedc;
-    index index.html;
-    client_max_body_size 25m;
-
-    location /api/ {
-        proxy_pass http://host.docker.internal:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto https;
-        proxy_set_header X-Forwarded-Host $host;
-    }
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-}
-```
-
-如果 Nginx 容器只暴露宿主机的 8011 端口，用户通过以下地址访问：
-
-```text
-https://edc.peppernotes.top:8011/
-```
-
-每次发布新前端版本后：
-
-```zsh
-npm run build
-rsync -a --delete apps/web/dist/ ~/.nginx/openedc/
-docker exec nginx nginx -t
-docker exec nginx nginx -s reload
-```
-
-不要把 3000 端口暴露到公网。Docker Nginx 通过 `host.docker.internal:3000` 访问 Mac 主机上的 API。
-
-## 6. OpenEDC 使用教程
-
-### 6.1 登录和个人设置
+### 4.1 登录和个人设置
 
 使用超级管理员账号登录后，先进入“设置”：
 
@@ -200,7 +95,7 @@ docker exec nginx nginx -s reload
 2. 选择界面语言和浅色/深色主题。
 3. 如需更换密码，在“账号安全”中修改。
 
-### 6.2 创建研究项目
+### 4.2 创建研究项目
 
 进入“研究项目”：
 
@@ -210,7 +105,7 @@ docker exec nginx nginx -s reload
 
 超级管理员可以在研究项目编辑弹窗中删除项目。删除项目会同时删除该项目的中心、成员、表单、受试者、记录、随机化、导出和审计等关联数据，生产环境执行前必须确认备份。
 
-### 6.3 创建研究中心
+### 4.3 创建研究中心
 
 进入“中心管理”：
 
@@ -220,7 +115,7 @@ docker exec nginx nginx -s reload
 
 项目管理员可以管理项目中心；中心管理员和研究者只能访问自己所属中心的数据。
 
-### 6.4 创建成员并分配权限
+### 4.4 创建成员并分配权限
 
 进入“成员与权限”：
 
@@ -232,7 +127,7 @@ docker exec nginx nginx -s reload
 
 平台账号由用户注册或超级管理员创建；研究项目内只分配已有账号。一个用户在同一个研究中只能属于一个中心。
 
-### 6.5 设计筛选表单
+### 4.5 设计筛选表单
 
 进入“表单设计”：
 
@@ -245,7 +140,7 @@ docker exec nginx nginx -s reload
 
 筛选表单只能设计一份。设置为筛选表单后不能改成其他类型，也不能删除；筛选表单不允许重复录入和绑定访视时间点。
 
-### 6.6 配置访视计划和随访表单
+### 4.6 配置访视计划和随访表单
 
 进入“访视计划”创建研究访视时间点，然后在“表单设计”中创建基线或随访表单：
 
@@ -256,7 +151,7 @@ docker exec nginx nginx -s reload
 
 已经存在数据记录的表单不能直接删除；发布版本也不能就地修改，需要通过新版本和迁移流程演进。
 
-### 6.7 配置随机化
+### 4.7 配置随机化
 
 进入“随机化”：
 
@@ -269,7 +164,7 @@ docker exec nginx nginx -s reload
 
 项目管理员或统计管理员负责查看和配置随机化方案；研究者和中心管理员只能执行随机化，不能查看完整种子、区组大小和算法细节。
 
-### 6.8 创建和管理受试者
+### 4.8 创建和管理受试者
 
 进入“受试者”：
 
@@ -282,7 +177,7 @@ docker exec nginx nginx -s reload
 
 受试者详情页可以进行随访、表单数据录入、文件上传、事件记录和时间线查看。
 
-### 6.9 查看仪表盘、导出和审计
+### 4.9 查看仪表盘、导出和审计
 
 - “项目仪表盘”：查看入组、随机化、完成情况、中心分布和最近活动。
 - “数据导出”：按权限导出 CSV 或 Excel。
@@ -291,7 +186,7 @@ docker exec nginx nginx -s reload
 
 观察者只能查看自己所属中心的数据，不能新建筛选、随机化、录入或导出数据。
 
-## 7. 数据和备份注意事项
+## 5. 数据和备份注意事项
 
 OpenEDC 使用单实例 SQLite：
 
@@ -301,7 +196,7 @@ OpenEDC 使用单实例 SQLite：
 - 不要把数据库、上传文件、导出文件和环境文件提交到 GitHub。
 - 生产升级前先停止 API 并备份 `storage/data`、`storage/uploads` 和 `storage/quarantine`。
 
-## 8. 质量门禁
+## 6. 质量门禁
 
 发布前执行：
 
@@ -314,13 +209,3 @@ npm run build
 ```
 
 界面验收应覆盖登录、项目、中心、表单、受试者、随机化、数据录入、导出和审计流程，并检查桌面、平板、手机、中文/英文和浅色/深色主题。
-
-## 9. 表单文件格式说明
-
-表单 JSON/Excel 使用固定格式标识：
-
-```text
-openedc-form
-```
-
-该标识用于导入文件格式校验，不应手动修改。
