@@ -419,8 +419,7 @@ async function readFormWorkbook(buffer: Buffer) {
     const key = excelCellText(metadataSheet, row, 1)
     if (key) metadata.set(key, excelCellText(metadataSheet, row, 2))
   }
-  if (metadata.get('format') !== 'clinical-trial-edc-form')
-    throw new Error('不是受支持的 EDC 表单工作簿')
+  if (metadata.get('format') !== 'openedc-form') throw new Error('不是受支持的 EDC 表单工作簿')
 
   const fieldHeaders = new Map<string, number>()
   fieldSheet.getRow(1).eachCell((cell, column) => fieldHeaders.set(cell.text.trim(), column))
@@ -510,7 +509,7 @@ async function buildFormWorkbook(
   visitCodes: string[],
 ) {
   const workbook = new ExcelJS.Workbook()
-  workbook.creator = 'Clinical Trial EDC'
+  workbook.creator = 'OpenEDC'
   workbook.created = new Date()
   const metadata = workbook.addWorksheet('表单', { views: [{ state: 'frozen', ySplit: 1 }] })
   metadata.columns = [
@@ -519,7 +518,7 @@ async function buildFormWorkbook(
     { header: '说明', key: 'description', width: 44 },
   ]
   const metadataRows = [
-    ['format', 'clinical-trial-edc-form', '固定格式标识，请勿修改'],
+    ['format', 'openedc-form', '固定格式标识，请勿修改'],
     ['formatVersion', 1, 'Excel 模板格式版本'],
     ['code', form.code, '研究内唯一表单编号'],
     ['name', form.name, '表单名称'],
@@ -1025,7 +1024,7 @@ export const formRoutes: FastifyPluginAsync = async (app) => {
         .all(studyId, formId) as Array<{ code: string }>
     ).map((row) => row.code)
     const exported = {
-      format: 'clinical-trial-edc-form',
+      format: 'openedc-form',
       formatVersion: 1,
       exportedAt: new Date().toISOString(),
       form: {

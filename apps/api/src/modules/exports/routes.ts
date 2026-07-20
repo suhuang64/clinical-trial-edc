@@ -194,7 +194,7 @@ async function writeExportFile(
     return
   }
   const workbook = new ExcelJS.Workbook()
-  workbook.creator = 'Clinical Trial EDC'
+  workbook.creator = 'OpenEDC'
   workbook.created = new Date()
   const worksheet = workbook.addWorksheet('数据', {
     views: [{ state: 'frozen', ySplit: 1 }],

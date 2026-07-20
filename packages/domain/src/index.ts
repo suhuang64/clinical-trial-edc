@@ -1,4 +1,4 @@
-export const projectName = 'Clinical Trial EDC'
+export const projectName = 'OpenEDC'
 export * from './form-runtime.js'
 export * from './form-validation.js'
 export * from './randomization.js'

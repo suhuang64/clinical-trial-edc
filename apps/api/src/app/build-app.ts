@@ -38,7 +38,7 @@ export async function buildApp() {
   await app.register(multipart, { limits: { fileSize: 20 * 1024 * 1024, files: 1 } })
   await app.register(rateLimit, { global: false })
   await app.register(swagger, {
-    openapi: { info: { title: 'Clinical Trial EDC API', version: '0.1.0' } },
+    openapi: { info: { title: 'OpenEDC API', version: '1.0.0' } },
   })
   await app.register(swaggerUi, { routePrefix: '/documentation' })
 

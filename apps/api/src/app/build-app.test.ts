@@ -2032,7 +2032,7 @@ describe('API 基础能力', () => {
     expect(formList.json().items).toHaveLength(4)
 
     const importSource = {
-      format: 'clinical-trial-edc-form',
+      format: 'openedc-form',
       formatVersion: 1,
       form: {
         code: 'IMPORTED_BASELINE',
