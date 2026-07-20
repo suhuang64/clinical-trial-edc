@@ -510,8 +510,8 @@ a[href] {
 .user-button {
   display: flex;
   align-items: center;
-  gap: 3px;
-  padding: 3px 8px;
+  gap: 1px;
+  padding: 3px 12px 3px 5px;
   border-color: color-mix(in srgb, var(--color-primary) 22%, var(--color-border));
   background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
   transition:
