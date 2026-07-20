@@ -561,6 +561,13 @@ a[href] {
   line-height: 1.3;
 }
 
+.page-heading-study {
+  margin: 4px 0 0;
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .page-eyebrow {
   margin: 0;
   font-size: 13px;

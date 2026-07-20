@@ -303,6 +303,12 @@ onMounted(() => studies.load())
         <div class="page-heading">
           <div>
             <h1>{{ pageTitle }}</h1>
+            <p
+              v-if="route.name === 'dashboard' && studies.currentStudy"
+              class="page-heading-study muted-text"
+            >
+              {{ studies.currentStudy.name }}
+            </p>
           </div>
           <slot name="page-action" />
         </div>
