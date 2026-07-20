@@ -379,6 +379,13 @@ async function advanceStatus(study: (typeof studies.studies)[number]) {
   justify-content: space-between;
   gap: 12px;
 }
+.study-card header > div {
+  min-width: 0;
+}
+.study-card header > .status-pill {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
 .study-actions {
   display: flex;
   flex-wrap: nowrap;
@@ -391,6 +398,9 @@ async function advanceStatus(study: (typeof studies.studies)[number]) {
 .study-card h2 {
   margin: 4px 0 0;
   font-size: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .study-card footer {
   align-items: center;
