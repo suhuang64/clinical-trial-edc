@@ -8,8 +8,8 @@ OpenEDC 是面向多项目、多中心临床研究的轻量级电子数据采集
 
 - Node.js 24 或更高版本
 - npm 11 或更高版本
-- 生产环境需要一个 HTTPS 反向代理（例如 Nginx）
 - 生产环境只运行一个 API 进程和一个 SQLite 数据库
+- 对外访问可使用 Cloudflare Tunnel；不需要开放本机入站端口
 
 ## 2. 本地开发
 
@@ -67,13 +67,15 @@ EDC_ADMIN_PASSWORD='至少12位的生产密码' \
   --name "系统管理员"
 ```
 
-启动生产 API：
+启动生产服务：
 
 ```zsh
 npm run start
 ```
 
-`npm run start` 会自动加载 `.env.production`，API 监听 `127.0.0.1:3000`。健康检查：
+`npm run start` 会自动加载 `.env.production`，并在 `127.0.0.1:3000` 同时提供 API、前端静态文件和 Vue 路由回退。每次发布新版本前必须先执行 `npm run build`。
+
+健康检查：
 
 ```zsh
 curl http://127.0.0.1:3000/api/health
@@ -84,6 +86,24 @@ curl http://127.0.0.1:3000/api/health
 ```json
 { "status": "ok", "time": "2026-07-20T00:00:00.000Z" }
 ```
+
+### 3.1 Cloudflare Tunnel（无需 Nginx）
+
+OpenEDC 生产服务只监听本机回环地址，无需开放 3000 或其他入站端口。创建 Cloudflare Tunnel 后，在 Cloudflare Zero Trust 的 Public Hostname 中设置：
+
+```text
+主机名：edc.example.com
+服务类型：HTTP
+服务地址：http://host.docker.internal:3000
+```
+
+如果 `cloudflared` 直接运行在宿主机而非 Docker 容器中，服务地址改为：
+
+```text
+http://127.0.0.1:3000
+```
+
+建议在 Cloudflare Access 中为该主机名配置允许访问的身份策略。Cloudflare Access 是外层访问控制；OpenEDC 的账号、项目、中心和细粒度权限仍然独立生效。
 
 ## 4. OpenEDC 使用教程
 
@@ -111,7 +131,7 @@ curl http://127.0.0.1:3000/api/health
 
 1. 新建研究中心。
 2. 填写中心名称、主要研究者、联系人和入组目标。
-3. 中心编号由系统内部管理，页面主要显示中心名称。
+3. 中心由系统内部 UUID 管理，页面仅显示中心名称。
 
 项目管理员可以管理项目中心；中心管理员和研究者只能访问自己所属中心的数据。
 
@@ -123,7 +143,7 @@ curl http://127.0.0.1:3000/api/health
 2. 按姓名选择目标用户；同名用户会同时显示单位等信息用于鉴别。
 3. 将用户加入当前研究并分配中心。
 4. 选择角色模板：项目管理员、中心管理员、研究者或观察者。
-5. 如有需要，再对单个用户增加或撤销细粒度权限。
+5. 如有需要，再对单个用户撤销细粒度权限。
 
 平台账号由用户注册或超级管理员创建；研究项目内只分配已有账号。一个用户在同一个研究中只能属于一个中心。
 

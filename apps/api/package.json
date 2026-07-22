@@ -18,6 +18,7 @@
     "@fastify/helmet": "latest",
     "@fastify/multipart": "latest",
     "@fastify/rate-limit": "latest",
+    "@fastify/static": "^9.3.0",
     "@fastify/swagger": "latest",
     "@fastify/swagger-ui": "latest",
     "argon2": "latest",

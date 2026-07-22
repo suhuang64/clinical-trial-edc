@@ -21,6 +21,7 @@ export const config = {
   uploadRoot: resolve(workspaceRoot, process.env.UPLOAD_ROOT ?? 'storage/uploads'),
   quarantineRoot: resolve(workspaceRoot, process.env.QUARANTINE_ROOT ?? 'storage/quarantine'),
   exportRoot: resolve(workspaceRoot, process.env.EXPORT_ROOT ?? 'storage/exports'),
+  webDistRoot: resolve(workspaceRoot, 'apps/web/dist'),
   sessionCookieName: process.env.SESSION_COOKIE_NAME ?? 'edc_session',
   sessionTtlHours: integer(process.env.SESSION_TTL_HOURS, 12),
   trustProxy: boolean(process.env.TRUST_PROXY, false),

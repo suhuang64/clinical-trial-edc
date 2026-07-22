@@ -1,10 +1,18 @@
+import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
 import cookie from '@fastify/cookie'
 import helmet from '@fastify/helmet'
 import rateLimit from '@fastify/rate-limit'
 import multipart from '@fastify/multipart'
+import staticFiles from '@fastify/static'
 import swagger from '@fastify/swagger'
 import swaggerUi from '@fastify/swagger-ui'
-import Fastify, { type FastifyError } from 'fastify'
+import Fastify, {
+  type FastifyError,
+  type FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest,
+} from 'fastify'
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod'
 import { config } from '../config.js'
 import { authRoutes } from '../modules/auth/routes.js'
@@ -24,6 +32,34 @@ import { dashboardRoutes } from '../modules/dashboard/routes.js'
 import { exportRoutes, recoverExportJobs, waitForExportJobs } from '../modules/exports/routes.js'
 import { auditRoutes } from '../modules/audit/routes.js'
 import { userRoutes } from '../modules/users/routes.js'
+
+async function registerProductionWeb(app: FastifyInstance) {
+  if (!config.isProduction) return
+
+  const assetRoot = resolve(config.webDistRoot, 'assets')
+  if (!existsSync(resolve(config.webDistRoot, 'index.html')) || !existsSync(assetRoot)) {
+    throw new Error(`未找到前端生产构建文件，请先执行 npm run build：${config.webDistRoot}`)
+  }
+
+  await app.register(staticFiles, {
+    root: assetRoot,
+    prefix: '/assets/',
+    maxAge: '1y',
+    immutable: true,
+  })
+
+  const sendIndex = async (_request: FastifyRequest, reply: FastifyReply) =>
+    reply.type('text/html; charset=utf-8').sendFile('index.html', config.webDistRoot)
+
+  app.get('/', sendIndex)
+  app.get('/*', async (request, reply) => {
+    const requestPath = request.url?.split('?')[0] ?? ''
+    if (requestPath.startsWith('/api/')) {
+      return reply.code(404).send({ code: 'NOT_FOUND', message: '接口不存在' })
+    }
+    return sendIndex(request, reply)
+  })
+}
 
 export async function buildApp() {
   const app = Fastify({
@@ -62,6 +98,7 @@ export async function buildApp() {
   await app.register(exportRoutes, { prefix: '/api/v1/studies/:studyId/exports' })
   await app.register(auditRoutes, { prefix: '/api/v1/studies/:studyId/audit' })
   await app.register(userRoutes, { prefix: '/api/v1/users' })
+  await registerProductionWeb(app)
   recoverQuarantinedFiles()
   recoverFormMigrationJobs()
   recoverExportJobs()
