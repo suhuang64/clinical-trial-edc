@@ -6,6 +6,7 @@ import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { ApiClientError } from '@/api/client'
 import openedcWordmark from '@/assets/brand/openedc-wordmark.webp'
+import openedcWordmarkOnDark from '@/assets/brand/openedc-wordmark-on-dark.webp'
 import { useAuthStore } from './auth.store'
 import { usePreferencesStore } from '@/modules/settings/preferences.store'
 
@@ -64,7 +65,7 @@ async function submit() {
       <div class="brand login-brand">
         <img
           class="login-brand-logo"
-          :src="openedcWordmark"
+          :src="preferences.resolvedTheme === 'dark' ? openedcWordmarkOnDark : openedcWordmark"
           alt="OpenEDC"
           width="251"
           height="64"

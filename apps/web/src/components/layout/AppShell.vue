@@ -24,7 +24,9 @@ import { useStudyStore } from '@/modules/studies/study.store'
 import { useSiteScopeStore } from '@/modules/studies/site-scope.store'
 import { apiRequest, ApiClientError } from '@/api/client'
 import openedcMark from '@/assets/brand/openedc-mark.webp'
+import openedcMarkOnDark from '@/assets/brand/openedc-mark-on-dark.webp'
 import openedcWordmark from '@/assets/brand/openedc-wordmark.webp'
+import openedcWordmarkOnDark from '@/assets/brand/openedc-wordmark-on-dark.webp'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -194,7 +196,7 @@ onMounted(() => studies.load())
         <img
           v-if="sidebarCollapsed"
           class="sidebar-brand-logo sidebar-brand-logo--mark"
-          :src="openedcMark"
+          :src="preferences.resolvedTheme === 'dark' ? openedcMarkOnDark : openedcMark"
           :alt="t('common.appName')"
           width="64"
           height="64"
@@ -202,7 +204,7 @@ onMounted(() => studies.load())
         <img
           v-else
           class="sidebar-brand-logo sidebar-brand-logo--wordmark"
-          :src="openedcWordmark"
+          :src="preferences.resolvedTheme === 'dark' ? openedcWordmarkOnDark : openedcWordmark"
           :alt="t('common.appName')"
           width="251"
           height="64"
