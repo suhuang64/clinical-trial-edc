@@ -48,6 +48,15 @@ async function registerProductionWeb(app: FastifyInstance) {
     immutable: true,
   })
 
+  await app.register(staticFiles, {
+    root: config.webDistRoot,
+    prefix: '/',
+    decorateReply: false,
+    wildcard: false,
+    index: false,
+    globIgnore: ['assets/**', 'index.html'],
+  })
+
   const sendIndex = async (_request: FastifyRequest, reply: FastifyReply) =>
     reply.type('text/html; charset=utf-8').sendFile('index.html', config.webDistRoot)
 
