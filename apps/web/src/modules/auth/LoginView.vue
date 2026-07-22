@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { ApiClientError } from '@/api/client'
+import openedcWordmark from '@/assets/brand/openedc-wordmark.webp'
 import { useAuthStore } from './auth.store'
 import { usePreferencesStore } from '@/modules/settings/preferences.store'
 
@@ -60,8 +61,14 @@ async function submit() {
       </el-tooltip>
     </div>
     <section class="login-brand-panel">
-      <div class="brand">
-        <span class="brand-mark">O</span><span class="brand-name">OpenEDC</span>
+      <div class="brand login-brand">
+        <img
+          class="login-brand-logo"
+          :src="openedcWordmark"
+          alt="OpenEDC"
+          width="251"
+          height="64"
+        />
       </div>
       <div>
         <p>{{ t('login.platform') }}</p>
@@ -133,6 +140,18 @@ async function submit() {
 .login-preferences .icon-button {
   min-width: 44px;
   min-height: 44px;
+}
+.login-brand {
+  width: fit-content;
+  height: auto;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 12px;
+}
+.login-brand-logo {
+  display: block;
+  width: min(251px, 100%);
+  height: auto;
 }
 .register-link {
   display: flex;

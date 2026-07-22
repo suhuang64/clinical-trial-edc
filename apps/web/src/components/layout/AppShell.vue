@@ -23,6 +23,8 @@ import { useAuthStore } from '@/modules/auth/auth.store'
 import { useStudyStore } from '@/modules/studies/study.store'
 import { useSiteScopeStore } from '@/modules/studies/site-scope.store'
 import { apiRequest, ApiClientError } from '@/api/client'
+import openedcMark from '@/assets/brand/openedc-mark.webp'
+import openedcWordmark from '@/assets/brand/openedc-wordmark.webp'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -188,9 +190,23 @@ onMounted(() => studies.load())
   <div class="app-shell" :class="{ 'is-mobile': isMobile, 'is-tablet-like': isTabletLike }">
     <a class="skip-link" href="#main-content">{{ t('common.skipToContent') }}</a>
     <aside v-if="!isMobile" class="app-sidebar" :class="{ collapsed: sidebarCollapsed }">
-      <div class="brand">
-        <span class="brand-mark" aria-hidden="true">O</span>
-        <span v-if="!sidebarCollapsed" class="brand-name">{{ t('common.appName') }}</span>
+      <div class="brand sidebar-brand">
+        <img
+          v-if="sidebarCollapsed"
+          class="sidebar-brand-logo sidebar-brand-logo--mark"
+          :src="openedcMark"
+          :alt="t('common.appName')"
+          width="64"
+          height="64"
+        />
+        <img
+          v-else
+          class="sidebar-brand-logo sidebar-brand-logo--wordmark"
+          :src="openedcWordmark"
+          :alt="t('common.appName')"
+          width="251"
+          height="64"
+        />
       </div>
       <nav class="sidebar-nav" :aria-label="t('common.mainNavigation')">
         <RouterLink
