@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import {
+  ArrowLeft,
+  ArrowRight,
   Avatar,
   DataAnalysis,
   Document,
   FolderOpened,
   House,
-  Menu as MenuIcon,
   Moon,
   Operation,
   Setting,
@@ -46,6 +47,7 @@ const isTabletLike = computed(
 const sidebarCollapsed = computed(
   () => collapsed.value || (width.value >= 768 && width.value <= 1024) || isTabletLike.value,
 )
+const canToggleSidebar = computed(() => width.value > 1024 && !isTabletLike.value)
 
 const navigation = [
   { key: 'dashboard', path: '/dashboard', icon: House },
@@ -231,13 +233,16 @@ onMounted(() => studies.load())
         </RouterLink>
       </nav>
       <button
-        v-if="!isTabletLike"
+        v-if="canToggleSidebar"
         class="sidebar-collapse"
+        :class="
+          sidebarCollapsed ? 'sidebar-collapse--bottom' : 'sidebar-collapse--edge'
+        "
         type="button"
-        :aria-label="collapsed ? t('common.expandSidebar') : t('common.collapseSidebar')"
+        :aria-label="sidebarCollapsed ? t('common.expandSidebar') : t('common.collapseSidebar')"
         @click="collapsed = !collapsed"
       >
-        <el-icon><MenuIcon /></el-icon>
+        <el-icon><ArrowRight v-if="sidebarCollapsed" /><ArrowLeft v-else /></el-icon>
       </button>
     </aside>
 

@@ -398,6 +398,10 @@ a[href] {
   padding: 12px;
 }
 
+.app-sidebar.collapsed .sidebar-nav {
+  padding-bottom: 64px;
+}
+
 .nav-item {
   display: flex;
   min-height: 40px;
@@ -430,11 +434,51 @@ a[href] {
 }
 
 .sidebar-collapse {
-  min-height: 44px;
-  border: 0;
-  border-top: 1px solid var(--color-border);
-  background: transparent;
+  position: absolute;
+  z-index: 50;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-surface);
+  box-shadow: 0 4px 14px rgb(15 23 42 / 16%);
   color: var(--color-text-secondary);
+  transition:
+    opacity 150ms ease,
+    background 150ms ease,
+    color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.sidebar-collapse:hover {
+  background: var(--color-surface-subtle);
+  color: var(--color-primary);
+  box-shadow: 0 6px 18px rgb(15 23 42 / 22%);
+}
+
+.sidebar-collapse--edge {
+  top: 50%;
+  right: -18px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.app-sidebar:hover .sidebar-collapse--edge,
+.app-sidebar:focus-within .sidebar-collapse--edge,
+.sidebar-collapse--edge:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sidebar-collapse--bottom {
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .app-workspace {
