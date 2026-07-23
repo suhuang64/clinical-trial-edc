@@ -58,7 +58,10 @@ async function registerProductionWeb(app: FastifyInstance) {
   })
 
   const sendIndex = async (_request: FastifyRequest, reply: FastifyReply) =>
-    reply.type('text/html; charset=utf-8').sendFile('index.html', config.webDistRoot)
+    reply
+      .header('Cache-Control', 'no-cache')
+      .type('text/html; charset=utf-8')
+      .sendFile('index.html', config.webDistRoot, { cacheControl: false })
 
   app.get('/', sendIndex)
   app.get('/*', async (request, reply) => {
