@@ -589,6 +589,14 @@ a[href] {
     border-color 180ms ease;
 }
 
+.user-button.is-icon-only {
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  justify-content: center;
+}
+
 .user-button:hover {
   border-color: color-mix(in srgb, var(--color-primary) 32%, var(--color-border));
   background: color-mix(in srgb, var(--color-primary) 18%, var(--color-surface));
@@ -1003,6 +1011,20 @@ a[href] {
   .topbar {
     height: 56px;
     padding: 0 12px;
+    gap: 8px;
+  }
+  .topbar-brand-logo {
+    display: block;
+    width: 88px;
+    height: auto;
+    flex: none;
+    object-fit: contain;
+  }
+  .topbar-title {
+    flex: 1;
+  }
+  .topbar-actions {
+    flex: none;
   }
   .context-label {
     display: none;
@@ -1014,7 +1036,7 @@ a[href] {
     font-weight: 600;
   }
   .study-select {
-    width: calc(100vw - 190px);
+    width: 100%;
   }
   .site-select {
     display: none;

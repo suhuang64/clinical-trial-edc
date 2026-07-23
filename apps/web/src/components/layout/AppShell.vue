@@ -248,6 +248,14 @@ onMounted(() => studies.load())
 
     <div class="app-workspace">
       <header class="topbar">
+        <img
+          v-if="isMobile"
+          class="topbar-brand-logo"
+          :src="preferences.resolvedTheme === 'dark' ? openedcWordmarkOnDark : openedcWordmark"
+          :alt="t('common.appName')"
+          width="251"
+          height="64"
+        />
         <div class="topbar-title">
           <span class="context-label">{{ t('common.currentStudy') }}</span>
           <el-select
@@ -285,7 +293,10 @@ onMounted(() => studies.load())
           </button>
         </div>
         <div class="topbar-actions">
-          <el-dropdown @command="(value: 'zh-CN' | 'en-US') => savePreferences(value)">
+          <el-dropdown
+            v-if="!isMobile"
+            @command="(value: 'zh-CN' | 'en-US') => savePreferences(value)"
+          >
             <button class="language-button" type="button" :aria-label="t('common.switchLanguage')">
               {{ preferences.locale === 'zh-CN' ? '中' : 'EN' }}
             </button>
@@ -297,6 +308,7 @@ onMounted(() => studies.load())
             </template>
           </el-dropdown>
           <button
+            v-if="!isMobile"
             class="icon-button"
             type="button"
             :aria-label="t('common.toggleTheme')"
@@ -305,7 +317,12 @@ onMounted(() => studies.load())
             <el-icon><Moon v-if="preferences.resolvedTheme === 'light'" /><Sunny v-else /></el-icon>
           </button>
           <el-dropdown>
-            <button class="user-button" type="button" :aria-label="t('common.userMenu')">
+            <button
+              class="user-button"
+              :class="{ 'is-icon-only': width < 1024 }"
+              type="button"
+              :aria-label="t('common.userMenu')"
+            >
               <el-icon class="user-avatar" aria-hidden="true"><Avatar /></el-icon>
               <span v-if="width >= 1024">{{ auth.user?.displayName ?? t('common.user') }}</span>
             </button>
