@@ -17,6 +17,8 @@
   --sidebar-width: 180px;
   --sidebar-collapsed: 72px;
   --topbar-height: 64px;
+  --mobile-topbar-height: 52px;
+  --mobile-nav-height: 56px;
   font-family: Inter, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', system-ui, sans-serif;
   font-synthesis: none;
 }
@@ -858,7 +860,7 @@ a[href] {
   left: 0;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  min-height: calc(60px + env(safe-area-inset-bottom));
+  min-height: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom);
   border-top: 1px solid var(--color-border);
   background: var(--color-surface);
@@ -867,7 +869,7 @@ a[href] {
 .mobile-nav-item {
   display: flex;
   min-width: 0;
-  min-height: 56px;
+  min-height: var(--mobile-nav-height);
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -1013,10 +1015,10 @@ a[href] {
     min-width: 44px;
   }
   .app-workspace {
-    padding-bottom: calc(60px + env(safe-area-inset-bottom));
+    padding-bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom));
   }
   .topbar {
-    height: 56px;
+    height: var(--mobile-topbar-height);
     padding: 0 12px;
     gap: 8px;
   }
