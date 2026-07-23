@@ -395,7 +395,14 @@ a[href] {
   flex-direction: column;
   gap: 4px;
   overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   padding: 12px;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .app-sidebar.collapsed .sidebar-nav {
