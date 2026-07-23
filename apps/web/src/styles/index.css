@@ -2,6 +2,7 @@
   color-scheme: light;
   --color-primary: #0f6cbd;
   --color-primary-hover: #0b5cad;
+  --color-link-primary: #409eff;
   --color-accent: #0e7490;
   --color-background: #f5f7fa;
   --color-surface: #ffffff;
@@ -242,6 +243,19 @@
   .login-brand-panel p {
     color: var(--color-text-secondary);
   }
+}
+
+:root[data-theme='dark'] .login-page .register-link .el-button--primary.is-link {
+  border-color: transparent;
+  background: var(--color-background);
+  color: var(--color-link-primary);
+}
+
+:root[data-theme='dark'] .login-page .register-link .el-button--primary.is-link:hover,
+:root[data-theme='dark'] .login-page .register-link .el-button--primary.is-link:focus-visible {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--color-link-primary) 12%, var(--color-background));
+  color: var(--color-link-primary);
 }
 
 html,
